@@ -1,0 +1,22 @@
+{
+  "title": "Wikelo Solver implementation",
+  "slug": "wikelo-solver-build",
+  "created_at": "2026-07-14T19:00:00-07:00",
+  "updated_at": "2026-07-14T20:00:00-07:00",
+  "status": "complete",
+  "mode": "delegated",
+  "baseline_ref": "no-git",
+  "risk_level": "high",
+  "eval_contract": {"level":"full","path":"eval-contract.md","status":"ready"},
+  "approval": {"required":true,"granted":"2026-07-14T19:00:00-07:00","notes":"User approved the stack and darker Option B design."},
+  "delegation": {"native_agent_available":true,"native_agent_planned":true,"native_agent_used":true,"agent_count":2,"wave_count":1,"no_delegation_reason":"","notes":"Bounded UI and data-layer packets."},
+  "packets": [
+    {"id":"01-dashboard-ui","status":"complete","owner":"write-capable-agent","write_scope":["app/page.tsx","app/layout.tsx","app/globals.css","app/components/"],"result_path":"results/01-dashboard-ui.md"},
+    {"id":"02-data-layer","status":"complete","owner":"write-capable-agent","write_scope":["db/schema.ts","lib/","app/api/","scripts/","data/"],"result_path":"results/02-data-layer.md"}
+  ],
+  "verification": {"status":"passed","checks":[
+    {"name":"migration generation","command":"npm run db:generate","required":true,"status":"pass","evidence":"Generated and inspected drizzle/0000_plain_machine_man.sql."},
+    {"name":"lint","command":"npm run lint","required":true,"status":"pass","evidence":"ESLint completed with no findings."},
+    {"name":"deployment build","command":"npm run build","required":true,"status":"pass","evidence":"Vinext built the app and sample API route successfully."}
+  ]}
+}

@@ -1,0 +1,7 @@
+DISCORD_CLIENT_ID=replace-me
+DISCORD_CLIENT_SECRET=replace-me
+WIKELO_IMPORT_SECRET=replace-with-at-least-32-random-bytes
+WIKELO_INTERNAL_TOKEN=replace-with-at-least-32-random-bytes
+UEX_API_TOKEN=
+UEX_ITEMS_PRICES_URL=https://api.uexcorp.uk/2.0/items_prices_all
+UEX_MARKETPLACE_PRICES_URL=https://api.uexcorp.uk/2.0/marketplace_prices_averages_all

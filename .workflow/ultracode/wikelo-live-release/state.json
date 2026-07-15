@@ -1,0 +1,28 @@
+{
+  "title": "Wikelo live release",
+  "slug": "wikelo-live-release",
+  "created_at": "2026-07-15T00:00:00-07:00",
+  "updated_at": "2026-07-15T09:00:00-07:00",
+  "status": "complete",
+  "mode": "delegated",
+  "baseline_ref": "no-git",
+  "risk_level": "high",
+  "eval_contract": { "level": "full", "path": "eval-contract.md", "status": "checked" },
+  "approval": { "required": false, "granted": true, "notes": "Local build approved; deployment, credentials, live migration, and task installation excluded." },
+  "delegation": { "native_agent_available": true, "native_agent_planned": true, "native_agent_used": true, "agent_count": 3, "wave_count": 1, "no_delegation_reason": "", "notes": "Collector, backend, and UI packets integrated." },
+  "packets": [
+    { "id": "01-collector", "status": "complete", "owner": "write-capable-agent", "write_scope": ["collector/", "tests/collector/"], "result_path": "results/01-collector.md" },
+    { "id": "02-backend", "status": "complete", "owner": "write-capable-agent", "write_scope": ["db/schema.ts", "lib/server/", "app/api/", "app/auth/", "tests/backend/"], "result_path": "results/02-backend.md" },
+    { "id": "03-ui", "status": "complete", "owner": "write-capable-agent", "write_scope": ["app/components/RecipePlanner.tsx", "app/globals.css"], "result_path": "results/03-ui.md" },
+    { "id": "04-integration", "status": "complete", "owner": "parent", "write_scope": ["lib/contracts/", "README.md", "package.json", "drizzle/", ".workflow/ultracode/wikelo-live-release/"], "result_path": "results/04-integration.md" }
+  ],
+  "verification": {
+    "status": "complete",
+    "checks": [
+      { "name": "lint", "command": "npm run lint", "required": true, "status": "complete", "evidence": "ESLint exited 0." },
+      { "name": "build and node tests", "command": "npm test", "required": true, "status": "complete", "evidence": "Vinext build passed; 8/8 tests passed." },
+      { "name": "collector tests", "command": "npm run test:collector", "required": true, "status": "complete", "evidence": "20/20 assertions passed." },
+      { "name": "migration", "command": "npm run db:generate", "required": true, "status": "complete", "evidence": "Fresh 11-table migration generated." }
+    ]
+  }
+}
