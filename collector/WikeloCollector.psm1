@@ -396,48 +396,120 @@ function Get-WikeloXmlValue {
     $null
 }
 
+function Read-WikeloLocalization {
+    [CmdletBinding()]
+    param([string]$Path)
+    $values = @{}
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $values }
+    foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith(';') -or $trimmed.StartsWith('#') -or $trimmed.StartsWith('[') -or $trimmed -notmatch '=') { continue }
+        $parts = $trimmed.Split('=', 2)
+        $key = $parts[0].Trim()
+        if ($key) { $values[$key.ToLowerInvariant()] = $parts[1].Trim() }
+    }
+    $values
+}
+
+function Resolve-WikeloLocalizedName {
+    param([string]$Value, [hashtable]$Localization)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $Value }
+    $key = if ($Value.StartsWith('@')) { $Value.Substring(1) } else { $Value }
+    if ($Localization.ContainsKey($key.ToLowerInvariant())) {
+        $resolved = [string]$Localization[$key.ToLowerInvariant()]
+        if ($resolved -match '(?i)uninitialized|loc_empty|loc_placeholder') { return $null }
+        return $resolved
+    }
+    if ($Value -match '(?i)uninitialized|loc_empty|loc_placeholder') { return $null }
+    $Value
+}
+
+function Resolve-WikeloReferenceName {
+    param([string]$Reference, [hashtable]$ReferenceNames, [hashtable]$Localization = @{})
+    if ([string]::IsNullOrWhiteSpace($Reference)) { return $Reference }
+    $key = $Reference.Trim()
+    if ($ReferenceNames.ContainsKey($key)) {
+        $name = Resolve-WikeloLocalizedName ([string]$ReferenceNames[$key]) $Localization
+        if ($name) { return $name }
+    }
+    if ($key.StartsWith('@') -and $ReferenceNames.ContainsKey($key.Substring(1))) {
+        $name = Resolve-WikeloLocalizedName ([string]$ReferenceNames[$key.Substring(1)]) $Localization
+        if ($name) { return $name }
+    }
+    $fallback = Resolve-WikeloLocalizedName $key $Localization
+    if ($fallback) { return $fallback }
+    $Reference
+}
+
+function Get-WikeloXmlReferenceValue {
+    param([System.Xml.XmlElement]$Node)
+    [string](Get-WikeloXmlValue $Node @('entityClass','resource','reference','__ref'))
+}
+
 function Get-WikeloXmlReference {
-    param([System.Xml.XmlElement]$Node, [hashtable]$ReferenceNames)
+    param([System.Xml.XmlElement]$Node, [hashtable]$ReferenceNames, [hashtable]$Localization = @{})
     $reference = [string](Get-WikeloXmlValue $Node @('entityClass','resource','reference','__ref'))
     if ([string]::IsNullOrWhiteSpace($reference)) { return $null }
-    $key = $reference.Trim()
-    if ($ReferenceNames.ContainsKey($key)) { return [string]$ReferenceNames[$key] }
-    if ($key.StartsWith('@') -and $ReferenceNames.ContainsKey($key.Substring(1))) { return [string]$ReferenceNames[$key.Substring(1)] }
-    $key
+    Resolve-WikeloReferenceName $reference $ReferenceNames $Localization
+}
+
+function Get-WikeloRewardReferenceValue {
+    param([System.Xml.XmlElement]$Node)
+    if ($Node.LocalName -eq 'ContractResult_ItemsWeighting') {
+        $weighted = $Node.SelectSingleNode(".//*[local-name()='ItemAwardEntityClass']")
+        if ($weighted) { return Get-WikeloXmlReferenceValue $weighted }
+    }
+    if ($Node.LocalName -eq 'BlueprintRewards') { return [string](Get-WikeloXmlValue $Node @('blueprintPool')) }
+    Get-WikeloXmlReferenceValue $Node
 }
 
 function Get-WikeloRewardReference {
-    param([System.Xml.XmlElement]$Node, [hashtable]$ReferenceNames)
+    param([System.Xml.XmlElement]$Node, [hashtable]$ReferenceNames, [hashtable]$Localization = @{})
     if ($Node.LocalName -eq 'ContractResult_ItemsWeighting') {
         $weighted = $Node.SelectSingleNode(".//*[local-name()='ItemAwardEntityClass']")
-        if ($weighted) { return Get-WikeloXmlReference $weighted $ReferenceNames }
+        if ($weighted) { return Get-WikeloXmlReference $weighted $ReferenceNames $Localization }
     }
     if ($Node.LocalName -eq 'BlueprintRewards') {
         $pool = [string](Get-WikeloXmlValue $Node @('blueprintPool'))
         if ($pool) {
-            if ($ReferenceNames.ContainsKey($pool)) { return [string]$ReferenceNames[$pool] }
-            return $pool
+            if ($ReferenceNames.ContainsKey($pool)) { return Resolve-WikeloLocalizedName ([string]$ReferenceNames[$pool]) $Localization }
+            return Resolve-WikeloLocalizedName $pool $Localization
         }
     }
-    Get-WikeloXmlReference $Node $ReferenceNames
+    Get-WikeloXmlReference $Node $ReferenceNames $Localization
 }
 
 function Get-WikeloXmlRootMetadata {
     [CmdletBinding()]
     param([Parameter(Mandatory)][IO.FileInfo]$File)
     $reader = $null
+    $rootRef = $null
+    $rootName = $null
+    $nestedRefs = [Collections.Generic.List[object]]::new()
     try {
         $settings = [Xml.XmlReaderSettings]::new()
         $settings.IgnoreComments = $true
         $reader = [Xml.XmlReader]::Create($File.FullName, $settings)
         while ($reader.Read()) {
-            if ($reader.NodeType -eq [Xml.XmlNodeType]::Element -and $reader.GetAttribute('__ref')) {
-                [pscustomobject]@{
-                    Path = $File.FullName
-                    Reference = $reader.GetAttribute('__ref')
-                    Name = @('name', 'displayName', 'debugName') | ForEach-Object { $reader.GetAttribute($_) } | Where-Object { $_ } | Select-Object -First 1
+            if ($reader.NodeType -eq [Xml.XmlNodeType]::Element) {
+                $ref = $reader.GetAttribute('__ref')
+                $name = @('Name', 'name', 'DisplayName', 'displayName', 'debugName') | ForEach-Object { $reader.GetAttribute($_) } | Where-Object { $_ } | Select-Object -First 1
+                if ($reader.Depth -eq 0 -and $ref) {
+                    $rootRef = $ref
+                    if ($name) { $rootName = $name }
+                } elseif ($ref) {
+                    $nestedRefs.Add([pscustomobject]@{ Reference = $ref; Name = $name })
+                }
+                if ($rootRef -and -not $rootName -and $name) { $rootName = $name }
+                if ($rootRef -and $rootName) {
+                    return [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName }
                 }
             }
+        }
+        if ($rootRef) {
+            [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName }
+        } else {
+            foreach ($nested in $nestedRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $nested.Reference; Name = $nested.Name } }
         }
     } finally {
         if ($reader) { $reader.Dispose() }
@@ -452,6 +524,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         [string]$PatchVersion,
         [string]$PatchBuild,
         [string]$PatchChannel = 'live',
+        [string]$LocalizationPath,
         [datetime]$ExtractedAt = [datetime]::UtcNow
     )
 
@@ -460,6 +533,9 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         $collectorPath = Get-ChildItem -LiteralPath $ExtractionPath -Recurse -File -Filter 'thecollector.xml' -ErrorAction SilentlyContinue | Select-Object -First 1
     }
     if (-not $collectorPath) { throw 'TheCollector XML was not found at Data/libs/foundry/records/contracts/contractgenerator/thecollector.xml.' }
+    if (-not $LocalizationPath) { $LocalizationPath = Join-Path $ExtractionPath 'Localization\english\global.ini' }
+    $localization = Read-WikeloLocalization -Path $LocalizationPath
+    Write-WikeloCollectorDiagnostic "Localization source: $LocalizationPath; keys=$($localization.Count)"
 
     $xmlFiles = @(Get-ChildItem -LiteralPath $ExtractionPath -Recurse -File -Filter '*.xml')
     Write-WikeloCollectorDiagnostic "XML index: discovered $($xmlFiles.Count) XML files; reading root metadata only."
@@ -511,17 +587,19 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         foreach ($source in $sourceNodes) {
             foreach ($property in @($source.SelectNodes(".//*[local-name()='MissionProperty' and @missionVariableName='HaulingOverride']"))) {
                 foreach ($entity in @($property.SelectNodes(".//*[local-name()='HaulingOrderContent_EntityClass']"))) {
-                    $reference = Get-WikeloXmlReference $entity $referenceNames
-                    if ($reference) {
+                    $referenceId = Get-WikeloXmlReferenceValue $entity
+                    $reference = Resolve-WikeloReferenceName $referenceId $referenceNames $localization
+                    if ($referenceId) {
                         $amount = ConvertTo-WikeloNumber (Get-WikeloXmlValue $entity @('minAmount','maxAmount')) 1
-                        $requirements.Add([ordered]@{ gameItemId = $reference; name = $reference; category = 'entityClass'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
+                        $requirements.Add([ordered]@{ gameItemId = $referenceId; name = $reference; category = 'entityClass'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
                     }
                 }
                 foreach ($resource in @($property.SelectNodes(".//*[local-name()='HaulingOrderContent_Resource']"))) {
-                    $reference = Get-WikeloXmlReference $resource $referenceNames
-                    if ($reference) {
+                    $referenceId = Get-WikeloXmlReferenceValue $resource
+                    $reference = Resolve-WikeloReferenceName $referenceId $referenceNames $localization
+                    if ($referenceId) {
                         $amount = ConvertTo-WikeloNumber (Get-WikeloXmlValue $resource @('minSCU','maxSCU')) 1
-                        $requirements.Add([ordered]@{ gameItemId = $reference; name = $reference; category = 'resource'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
+                        $requirements.Add([ordered]@{ gameItemId = $referenceId; name = $reference; category = 'resource'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
                     }
                 }
             }
@@ -536,14 +614,22 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
             if ($reward) { break }
         }
         if (-not $reward -or $requirements.Count -eq 0) { Write-Verbose "Skipping incomplete contract '$($contract.GetAttribute('id'))'."; continue }
-        $output = Get-WikeloRewardReference $reward $referenceNames
-        $name = [string](Get-WikeloXmlValue $contract @('debugName','id'))
+        $outputId = Get-WikeloRewardReferenceValue $reward
+        $output = Resolve-WikeloReferenceName $outputId $referenceNames $localization
+        if ([string]::IsNullOrWhiteSpace([string]$outputId) -or [string]::IsNullOrWhiteSpace([string]$output)) {
+            Write-Verbose "Skipping contract '$($contract.GetAttribute('id'))' because its reward has no resolvable reference."
+            continue
+        }
+        $titleNode = $contract.SelectSingleNode(".//*[local-name()='ContractStringParam' and @param='Title']")
+        $titleKey = if ($titleNode) { $titleNode.GetAttribute('value') } else { $null }
+        $name = Resolve-WikeloLocalizedName $titleKey $localization
+        if ([string]::IsNullOrWhiteSpace($name) -or $name -eq $titleKey) { $name = [string](Get-WikeloXmlValue $contract @('debugName','id')) }
         if (-not $name) { $name = $output }
         $id = [string](Get-WikeloXmlValue $contract @('id','debugName'))
         if (-not $id) { $id = Get-WikeloStableId "$name|$output" 'recipe' }
         $recipes.Add([ordered]@{
             gameRecipeId = $id; name = $name; category = 'thecollector'
-            output = [ordered]@{ gameItemId = $output; name = $output; quantity = 1 }
+            output = [ordered]@{ gameItemId = $outputId; name = $output; quantity = 1 }
             reputationNeeded = 0; reputationGranted = 0; components = @($requirements)
         })
     }
@@ -566,6 +652,7 @@ function Convert-WikeloExtractionToNormalizedV1 {
         [string]$PatchVersion,
         [string]$PatchBuild,
         [string]$PatchChannel = 'live',
+        [string]$LocalizationPath,
         [datetime]$ExtractedAt = [datetime]::UtcNow
     )
 

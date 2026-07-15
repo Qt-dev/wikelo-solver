@@ -31,7 +31,8 @@ function Invoke-WikeloTrackedProcess {
         [Parameter(Mandatory)][string[]]$ArgumentList,
         [Parameter(Mandatory)][string]$WorkingDirectory,
         [Parameter(Mandatory)][string]$OutputDirectory,
-        [Parameter(Mandatory)][string]$Phase
+        [Parameter(Mandatory)][string]$Phase,
+        [string]$ExpectedOutputPath
     )
     $stdoutPath = Join-Path $OutputDirectory "$($Phase.ToLowerInvariant()).stdout.log"
     $stderrPath = Join-Path $OutputDirectory "$($Phase.ToLowerInvariant()).stderr.log"
@@ -52,11 +53,33 @@ function Invoke-WikeloTrackedProcess {
         $timer.Stop()
     }
     $stderr = if (Test-Path -LiteralPath $stderrPath) { @(Get-Content -LiteralPath $stderrPath -Tail 20 -ErrorAction SilentlyContinue) } else { @() }
-    if ($process.ExitCode -ne 0) {
-        Write-CollectorLog "$Phase failed: exitCode=$($process.ExitCode); stderr=$($stderr -join ' | ')"
-        throw "$Phase exited with code $($process.ExitCode). See $stderrPath"
+    $exitCode = $process.ExitCode
+    if ($null -eq $exitCode -and $ExpectedOutputPath -and (Test-Path -LiteralPath $ExpectedOutputPath -PathType Leaf)) {
+        Write-CollectorLog "$Phase completed with no readable exit code, but expected output exists: $ExpectedOutputPath"
+        return
+    }
+    if ($exitCode -ne 0) {
+        Write-CollectorLog "$Phase failed: exitCode=$exitCode; stderr=$($stderr -join ' | ')"
+        throw "$Phase exited with code $exitCode. See $stderrPath"
     }
     Write-CollectorLog "$Phase complete: exitCode=0, elapsedMinutes=$([math]::Round($timer.Elapsed.TotalMinutes, 1))"
+}
+
+function Ensure-WikeloLocalization {
+    param([Parameter(Mandatory)][string]$ArchivePath, [Parameter(Mandatory)][string]$Unp4kPath, [Parameter(Mandatory)][string]$WorkingRoot, [Parameter(Mandatory)][string]$DataRoot)
+    $target = Join-Path $DataRoot 'Localization\english\global.ini'
+    if (Test-Path -LiteralPath $target -PathType Leaf) { return $target }
+    Write-CollectorLog "Extracting English localization for record names."
+    Push-Location $WorkingRoot
+    try {
+        & $Unp4kPath $ArchivePath 'Localization/english/global.ini'
+        if ($LASTEXITCODE -ne 0 -and -not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "unp4k exited with code $LASTEXITCODE while extracting English localization." }
+    } finally {
+        Pop-Location
+    }
+    if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw 'unp4k did not produce Data/Localization/english/global.ini.' }
+    Write-CollectorLog "Localization extracted: $target"
+    $target
 }
 
 try {
@@ -100,6 +123,7 @@ try {
         if ($cacheCheck.Valid) {
             $extractionPath = $cacheCheck.ExtractionPath
             Write-CollectorLog "Cache hit: reusing $extractionPath; unp4k and unforge will not run."
+            Ensure-WikeloLocalization -ArchivePath $archive -Unp4kPath $unp4k -WorkingRoot (Split-Path $extractionPath -Parent) -DataRoot $extractionPath | Out-Null
         } else {
             $unforge = Resolve-WikeloUnforge -Config $config
             $stagingRoot = Join-Path $cacheRoot ('.staging-' + [guid]::NewGuid().ToString('N'))
@@ -117,7 +141,9 @@ try {
                 $dcb = Get-ChildItem -LiteralPath $extractionPath -File -ErrorAction SilentlyContinue |
                     Where-Object Name -In @('Game2.dcb', 'Game.dcb') | Select-Object -First 1
                 if (-not $dcb) { throw 'Neither Data/Game2.dcb nor Data/Game.dcb was extracted from Data.p4k.' }
-                Invoke-WikeloTrackedProcess -FilePath $unforge -ArgumentList @('"' + $dcb.FullName + '"') -WorkingDirectory $stagingRoot -OutputDirectory $stagingRoot -Phase 'unforge'
+                Ensure-WikeloLocalization -ArchivePath $archive -Unp4kPath $unp4k -WorkingRoot $stagingRoot -DataRoot $extractionPath | Out-Null
+                $collectorXml = Join-Path $extractionPath 'libs\foundry\records\contracts\contractgenerator\thecollector.xml'
+                Invoke-WikeloTrackedProcess -FilePath $unforge -ArgumentList @('"' + $dcb.FullName + '"') -WorkingDirectory $stagingRoot -OutputDirectory $stagingRoot -Phase 'unforge' -ExpectedOutputPath $collectorXml
             } finally {
                 Pop-Location
             }
@@ -125,7 +151,8 @@ try {
             if (-not (Test-Path -LiteralPath $collectorXml -PathType Leaf)) { throw 'unforge completed but TheCollector XML was not generated.' }
             Write-WikeloCacheManifest -CacheRoot $stagingRoot -ArchivePath $archive -ArchiveHash $archiveHash -ArchiveLength $archiveInfo.Length -ArchiveLastWriteUtc $archiveInfo.LastWriteTimeUtc -DcbName $dcb.Name -Unp4kPath $unp4k -UnforgePath $unforge
         }
-        $envelope = Convert-WikeloExtractionToNormalizedV1 -ExtractionPath $extractionPath -SourceHash $archiveHash -PatchVersion $config.PatchVersion -PatchBuild $config.PatchBuild -PatchChannel $config.PatchChannel
+        $localizationPath = Join-Path $extractionPath 'Localization\english\global.ini'
+        $envelope = Convert-WikeloExtractionToNormalizedV1 -ExtractionPath $extractionPath -SourceHash $archiveHash -PatchVersion $config.PatchVersion -PatchBuild $config.PatchBuild -PatchChannel $config.PatchChannel -LocalizationPath $localizationPath
         Assert-WikeloNormalizedV1 -Envelope $envelope | Out-Null
         if ($stagingRoot) {
             Publish-WikeloCache -StagingRoot $stagingRoot -CacheRoot $cacheRoot | Out-Null

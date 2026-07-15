@@ -29,7 +29,15 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
   const sourceHash = document.patch.sourceHash.toLowerCase();
   const existing = await db.select({ id: gamePatches.id, state: gamePatches.activationState })
     .from(gamePatches).where(eq(gamePatches.sourceHash, sourceHash)).limit(1);
-  if (existing[0] && existing[0].state !== "staging") {
+  const sameBodyImport = existing[0]
+    ? await db.select({ id: importRuns.id }).from(importRuns).where(and(
+      eq(importRuns.sourceHash, sourceHash),
+      eq(importRuns.bodyHash, verified.bodyHash),
+      ne(importRuns.id, runId),
+      ne(importRuns.status, "processing"),
+    )).limit(1)
+    : [];
+  if (existing[0] && existing[0].state !== "staging" && sameBodyImport[0]) {
     await db.update(importRuns).set({ status: "idempotent", patchId: existing[0].id, completedAt: now }).where(eq(importRuns.id, runId));
     return { runId, patchId: existing[0].id, status: "idempotent" as const };
   }
@@ -76,7 +84,10 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
         normalizedName: normalizeItemName(item.name),
         category: item.category,
         updatedAt: now,
-      }).onConflictDoNothing();
+      }).onConflictDoUpdate({
+        target: items.id,
+        set: { name: item.name, normalizedName: normalizeItemName(item.name), category: item.category, updatedAt: now },
+      });
       await db.insert(itemMappings).values({ itemId, status: "missing", updatedAt: now }).onConflictDoNothing();
     }
 
