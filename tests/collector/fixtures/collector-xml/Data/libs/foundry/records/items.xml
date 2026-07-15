@@ -1,0 +1,4 @@
+<Records>
+  <Item __ref="@item_ore" displayName="Ore" />
+  <Item __ref="@reward_box" displayName="Reward Box" />
+</Records>

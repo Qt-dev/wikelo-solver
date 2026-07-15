@@ -1,0 +1,22 @@
+{
+  "metadata": { "unrelated": true },
+  "payload": {
+    "version": "4.2.0-live",
+    "build": "987654",
+    "channel": "live",
+    "offers": [
+      {
+        "recipeId": "wikelo-armor-01",
+        "displayName": "Wikelo Armor Exchange",
+        "category": "armor",
+        "result": { "itemId": "armor-01", "displayName": "Wikelo Armor", "amount": 1 },
+        "requiredReputation": 3,
+        "reputationReward": 2,
+        "ingredients": [
+          { "item": { "id": "mat-a", "displayName": "Material A", "type": "material" }, "amount": 4 },
+          { "item": { "className": "mat-b", "name": "Material B", "category": "salvage" }, "count": 2 }
+        ]
+      }
+    ]
+  }
+}
