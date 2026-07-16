@@ -464,6 +464,18 @@ function Get-WikeloRewardReferenceValue {
     Get-WikeloXmlReferenceValue $Node
 }
 
+function ConvertTo-WikeloFileDisplayName {
+    param([IO.FileInfo]$File)
+    $stem = [IO.Path]::GetFileNameWithoutExtension($File.Name)
+    $isBlueprint = $stem -match '^bp_(reward|craft)_'
+    $stem = $stem -replace '^bp_(reward|craft)_', ''
+    $words = (($stem -creplace '([a-z0-9])([A-Z])', '$1 $2') -replace '[_-]+', ' ').Trim()
+    if (-not $words) { return $null }
+    $name = [Globalization.CultureInfo]::InvariantCulture.TextInfo.ToTitleCase($words.ToLowerInvariant())
+    if ($isBlueprint) { return "$name Blueprint" }
+    $name
+}
+
 function Get-WikeloRewardEntries {
     param([System.Xml.XmlElement]$Node)
     $entries = [Collections.Generic.List[object]]::new()
@@ -528,14 +540,14 @@ function Get-WikeloXmlRootMetadata {
                 }
                 if ($rootRef -and -not $rootName -and $name) { $rootName = $name }
                 if ($rootRef -and $rootName) {
-                    return [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName }
+                    return [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true }
                 }
             }
         }
         if ($rootRef) {
-            [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName }
+            [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true }
         } else {
-            foreach ($nested in $nestedRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $nested.Reference; Name = $nested.Name } }
+            foreach ($nested in $nestedRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $nested.Reference; Name = $nested.Name; IsRoot = $false } }
         }
     } finally {
         if ($reader) { $reader.Dispose() }
@@ -575,6 +587,8 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
             foreach ($metadata in @(Get-WikeloXmlRootMetadata -File $file)) {
                 $ref = [string]$metadata.Reference
                 $name = [string]$metadata.Name
+                $localizedName = if ($name) { Resolve-WikeloLocalizedName $name $localization } else { $null }
+                if ([bool]$metadata.IsRoot -and (-not $localizedName -or $localizedName.StartsWith('@'))) { $name = ConvertTo-WikeloFileDisplayName -File $file }
                 if (-not $name) { $name = $ref }
                 $referenceNames[$ref] = $name
                 $referencePaths[$ref] = $file.FullName

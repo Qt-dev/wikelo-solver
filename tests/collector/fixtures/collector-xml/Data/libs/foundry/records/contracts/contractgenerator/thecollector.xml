@@ -8,6 +8,7 @@
         <contractResults>
           <ContractResult_Item entityClass="@reward_box" amount="1" />
           <ContractResult_Item entityClass="@reward_token" amount="20" />
+          <BlueprintRewards blueprintPool="@blueprint_reward" />
         </contractResults>
       </Contract>
     </ContractGeneratorHandler_List>
