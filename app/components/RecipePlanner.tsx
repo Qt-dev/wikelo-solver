@@ -359,8 +359,11 @@ export default function RecipePlanner() {
       </div>}
 
       <section className="hero" aria-labelledby="page-title">
-        <div><p className="eyebrow">Live Wikelo mission planner</p><h1 id="page-title">Choose a commission.<br /><i>Finish the recipe.</i></h1><p className="hero-copy">Select one recipe, divide each requirement between owned, farmable, and still needed, then see the exact amount left to source.</p></div>
-        <div className="field-note" aria-label="Current recipe summary"><span>Working recipe</span><strong>{loading ? "Loading recipes…" : selectedRecipe?.name ?? "No active recipe"}</strong><p>{selectedSummary ? `${selectedSummary.ownedQuantity} owned · ${selectedSummary.farmableQuantity} to farm · ${selectedSummary.neededQuantity} to source` : "Waiting for an active patch"}</p><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary?.readiness ?? 0}%` }} /></div></div>
+        <div><p className="eyebrow">Wikelo reward planner</p><h1 id="page-title">Pick a reward.<br /><i>Plan every material.</i></h1><p className="hero-copy">Choose a Wikelo recipe, separate what you already own from what you can farm, and see exactly what remains to source.</p></div>
+        <div className="plan-snapshot" aria-label="Completion plan summary">
+          <div><span>Your completion plan</span><strong>{todoSummary.totalCompletions > 0 ? `${todoSummary.totalCompletions} completion${todoSummary.totalCompletions === 1 ? "" : "s"} queued` : "Nothing queued yet"}</strong><p>{todoSummary.totalCompletions > 0 ? `${todoSummary.ownedTotal} owned · ${todoSummary.farmingUnits} to farm · ${todoSummary.missingUnits} to source` : "Add one or more recipes to combine their requirements and track the full run."}</p></div>
+          {todoSummary.totalCompletions > 0 ? <><div className="progress-track" aria-hidden="true"><span style={{ width: `${todoSummary.readiness}%` }} /></div><button type="button" onClick={() => setTodoOpen(true)}>Open full plan</button></> : <button type="button" onClick={() => document.getElementById("planner")?.scrollIntoView({ behavior: "smooth", block: "start" })}>{loading ? "Loading recipes…" : `Browse ${recipes.length} recipes`}</button>}
+        </div>
       </section>
       {(notice || saveError) && <div className={`notice-bar ${saveError ? "error" : ""}`} role={saveError ? "alert" : "status"}>{saveError ?? notice}</div>}
 

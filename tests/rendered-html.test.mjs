@@ -13,6 +13,8 @@ test("the app shell uses live Wikelo product metadata", async () => {
   assert.match(page, /RecipePlanner/);
   assert.match(layout, /Wikelo Solver/);
   assert.match(layout, /extracted recipe data/);
+  assert.match(planner, /Pick a reward/);
+  assert.match(planner, /Your completion plan/);
   assert.match(planner, /\/api\/recipes/);
   assert.match(planner, /\/auth\/discord\/start/);
   assert.match(planner, /Owned/);
@@ -31,6 +33,7 @@ test("the app shell uses live Wikelo product metadata", async () => {
   assert.doesNotMatch(planner, /href="#recipe-details"/);
   assert.doesNotMatch(planner, /Search recipe, output, component, or category/);
   assert.doesNotMatch(`${layout}\n${planner}`, /sample-data|Sample data|Future account sync/);
+  assert.doesNotMatch(`${layout}\n${planner}`, /commission/i);
   assert.doesNotMatch(layout, /codex-preview|Starter Project/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });

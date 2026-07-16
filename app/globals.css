@@ -45,10 +45,13 @@ a { color: inherit; }
 .hero h1 { margin: 0; color: #f4ead8; font: 500 clamp(38px, 4.7vw, 62px)/1 Georgia, serif; letter-spacing: -0.04em; }
 .hero h1 i { color: #dda05f; font-weight: 400; }
 .hero-copy { max-width: 680px; margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.field-note { width: 330px; padding: 14px 17px; border: 1px solid rgba(222, 153, 89, 0.34); background: linear-gradient(135deg, rgba(54, 41, 31, 0.82), rgba(28, 31, 36, 0.74)); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15); }
-.field-note > span, .recipe-overview span, .detail-progress > span { display: block; color: #bdae9a; text-transform: uppercase; letter-spacing: 0.12em; font-size: 9px; font-weight: 700; }
-.field-note strong { display: block; margin: 8px 0 5px; color: #f2d6b0; font: 600 20px Georgia, serif; }
-.field-note p { margin: 0 0 13px; color: var(--muted); font-size: 11px; }
+.plan-snapshot { width: 360px; padding: 14px 17px; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px 14px; border: 1px solid rgba(222, 153, 89, 0.34); background: linear-gradient(135deg, rgba(54, 41, 31, 0.82), rgba(28, 31, 36, 0.74)); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15); }
+.plan-snapshot > div:first-child { grid-column: 1 / -1; }
+.plan-snapshot > div > span, .recipe-overview span, .detail-progress > span { display: block; color: #bdae9a; text-transform: uppercase; letter-spacing: 0.12em; font-size: 9px; font-weight: 700; }
+.plan-snapshot strong { display: block; margin: 7px 0 4px; color: #f2d6b0; font: 600 20px Georgia, serif; }
+.plan-snapshot p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.plan-snapshot .progress-track { min-width: 140px; }
+.plan-snapshot button { min-height: 31px; padding: 0 10px; border: 1px solid #76543d; background: #32251e; color: #efbd83; font-size: 9px; white-space: nowrap; }
 .progress-track { height: 6px; overflow: hidden; background: #37362f; }
 .progress-track span { display: block; height: 100%; background: linear-gradient(90deg, #b96c3d, #e9b068); transition: width 180ms ease; }
 .notice-bar { padding: 11px 15px; color: #c8d8ae; border-bottom: 1px solid rgba(167, 184, 135, 0.25); background: rgba(82, 105, 69, 0.14); text-align: center; font-size: 11px; }
@@ -295,7 +298,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .account-control > span:not(.account-avatar) { display: none; }
   .hero { min-height: 0; padding: 27px 0 24px; }
   .hero h1 { font-size: 43px; }
-  .field-note { display: none; }
+  .hero { flex-direction: column; align-items: stretch; gap: 20px; }
+  .plan-snapshot { width: 100%; }
   .planner-controls { padding: 14px 0; grid-template-columns: 1fr 1fr; }
   .global-search { grid-column: 1 / -1; grid-row: auto; }
   .control-group, .sort-control, .view-toggle { grid-column: auto; grid-row: auto; }
