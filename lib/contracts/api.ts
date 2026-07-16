@@ -10,6 +10,8 @@ export type PatchSummary = {
 
 export type RecipeComponentDto = {
   itemId: string;
+  uexItemId: number | null;
+  uexMarketplaceUrl: string | null;
   name: string;
   category: string;
   quantity: number;

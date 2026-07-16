@@ -78,7 +78,8 @@ The installer creates scheduled tasks only when you explicitly run it. Building 
 ## Data semantics
 
 - The active patch changes only after a complete validated import succeeds; failed imports leave the previous active patch visible.
-- Only exact game UUID, reviewed alias, or exact normalized-name UEX mappings are accepted automatically.
+- UEX `id_item` is the canonical marketplace identity; game UUIDs are optional secondary identifiers. Only an existing exact UEX item ID, exact game UUID, reviewed alias, or unique exact normalized-name mapping is accepted automatically.
+- Matched recipe components expose their official UEX marketplace link, including Wikelo Favor at `id_item=4385`.
 - Price selection prefers the lowest current terminal buy quote and falls back to the current quality-tier-zero marketplace buy average.
 - Owned and farmable inputs contribute zero to the shopping cost.
 - A missing price for a needed component marks the total incomplete. It is never silently treated as a zero-priced purchase.

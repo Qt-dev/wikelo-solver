@@ -4,23 +4,26 @@ const UEX_API_ORIGINS = new Set(["https://api.uexcorp.space", "https://api.uexco
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type JsonObject = Record<string, unknown>;
 
-export type UexCommodity = { uuid: string; name: string };
+export type UexItem = { idItem: number; uuid: string | null; name: string };
 export type ItemMappingCandidate = {
   itemId: string;
   gameItemId: string;
   name: string;
   reviewedAlias?: string | null;
+  existingUexItemId?: number | null;
   existingUexUuid?: string | null;
 };
 export type ResolvedItemMapping = {
   itemId: string;
+  uexItemId: number | null;
   uexCommodityUuid: string | null;
   uexName: string | null;
   status: "matched" | "review" | "missing";
-  matchMethod: "exact_uuid" | "reviewed_alias" | "exact_normalized_name" | null;
+  matchMethod: "exact_id" | "exact_uuid" | "reviewed_alias" | "exact_normalized_name" | null;
 };
 export type SelectedUexPrice = {
-  uexCommodityUuid: string;
+  uexItemId: number;
+  uexCommodityUuid: string | null;
   priceAuec: number;
   priceKind: "terminal_buy" | "marketplace_average";
   locationName: string | null;
@@ -57,53 +60,61 @@ function integer(record: JsonObject, keys: readonly string[]) {
   return null;
 }
 
-export function parseUexCommodities(payload: unknown): UexCommodity[] {
+export function parseUexItems(payload: unknown): UexItem[] {
   return records(payload).flatMap((record) => {
+    const idItem = integer(record, ["id_item", "item_id"]);
     const uuid = string(record, ["uuid", "item_uuid", "commodity_uuid", "id_uuid"]);
     const name = string(record, ["name", "item_name", "commodity_name", "name_commodity"]);
-    return uuid && UUID_PATTERN.test(uuid) && name ? [{ uuid: uuid.toLowerCase(), name }] : [];
+    return idItem !== null && idItem > 0 && name
+      ? [{ idItem, uuid: uuid && UUID_PATTERN.test(uuid) ? uuid.toLowerCase() : null, name }]
+      : [];
   });
 }
 
-/** Only exact UUID, a human-reviewed alias, or an exact normalized name can auto-match. */
+/** Only exact UEX ID/UUID, a human-reviewed alias, or an exact normalized name can auto-match. */
 export function resolveUexMapping(
   item: ItemMappingCandidate,
-  commodities: readonly UexCommodity[],
+  uexItems: readonly UexItem[],
 ): ResolvedItemMapping {
-  const byUuid = new Map(commodities.map((commodity) => [commodity.uuid.toLowerCase(), commodity]));
-  const byName = new Map<string, UexCommodity[]>();
-  for (const commodity of commodities) {
-    const key = normalizeItemName(commodity.name);
-    byName.set(key, [...(byName.get(key) ?? []), commodity]);
+  const byId = new Map(uexItems.map((uexItem) => [uexItem.idItem, uexItem]));
+  const byUuid = new Map(uexItems.flatMap((uexItem) => uexItem.uuid ? [[uexItem.uuid, uexItem] as const] : []));
+  const byName = new Map<string, UexItem[]>();
+  for (const uexItem of uexItems) {
+    const key = normalizeItemName(uexItem.name);
+    byName.set(key, [...(byName.get(key) ?? []), uexItem]);
+  }
+  const exactId = item.existingUexItemId ? byId.get(item.existingUexItemId) : undefined;
+  if (exactId) {
+    return { itemId: item.itemId, uexItemId: exactId.idItem, uexCommodityUuid: exactId.uuid, uexName: exactId.name, status: "matched", matchMethod: "exact_id" };
   }
   const exactUuid = [item.existingUexUuid, item.gameItemId]
     .filter((value): value is string => Boolean(value && UUID_PATTERN.test(value)))
     .map((value) => byUuid.get(value.toLowerCase()))
     .find(Boolean);
   if (exactUuid) {
-    return { itemId: item.itemId, uexCommodityUuid: exactUuid.uuid, uexName: exactUuid.name, status: "matched", matchMethod: "exact_uuid" };
+    return { itemId: item.itemId, uexItemId: exactUuid.idItem, uexCommodityUuid: exactUuid.uuid, uexName: exactUuid.name, status: "matched", matchMethod: "exact_uuid" };
   }
   if (item.reviewedAlias) {
     const aliases = byName.get(normalizeItemName(item.reviewedAlias)) ?? [];
     if (aliases.length === 1) {
-      return { itemId: item.itemId, uexCommodityUuid: aliases[0].uuid, uexName: aliases[0].name, status: "matched", matchMethod: "reviewed_alias" };
+      return { itemId: item.itemId, uexItemId: aliases[0].idItem, uexCommodityUuid: aliases[0].uuid, uexName: aliases[0].name, status: "matched", matchMethod: "reviewed_alias" };
     }
   }
   const names = byName.get(normalizeItemName(item.name)) ?? [];
   if (names.length === 1) {
-    return { itemId: item.itemId, uexCommodityUuid: names[0].uuid, uexName: names[0].name, status: "matched", matchMethod: "exact_normalized_name" };
+    return { itemId: item.itemId, uexItemId: names[0].idItem, uexCommodityUuid: names[0].uuid, uexName: names[0].name, status: "matched", matchMethod: "exact_normalized_name" };
   }
-  return { itemId: item.itemId, uexCommodityUuid: null, uexName: null, status: names.length > 1 ? "review" : "missing", matchMethod: null };
+  return { itemId: item.itemId, uexItemId: null, uexCommodityUuid: null, uexName: null, status: names.length > 1 ? "review" : "missing", matchMethod: null };
 }
 
 /** Selects the lowest positive terminal buy; marketplace average is fallback only. */
 export function selectUexPrice(
   terminalPayload: unknown,
-  commodityUuid: string,
+  uexItem: Pick<UexItem, "idItem" | "uuid">,
   marketplacePayload: unknown = terminalPayload,
 ): SelectedUexPrice | null {
   const matching = records(terminalPayload).filter((record) =>
-    string(record, ["item_uuid", "commodity_uuid", "uuid_commodity", "id_commodity_uuid"])?.toLowerCase() === commodityUuid.toLowerCase(),
+    integer(record, ["id_item", "item_id"]) === uexItem.idItem,
   );
   const terminal = matching.flatMap((record) => {
     const price = integer(record, ["price_buy", "buy_price"]);
@@ -114,10 +125,10 @@ export function selectUexPrice(
       : [];
   }).sort((left, right) => left.price - right.price)[0];
   if (terminal) {
-    return { uexCommodityUuid: commodityUuid, priceAuec: terminal.price, priceKind: "terminal_buy", locationName: terminal.location, sourceRecordId: terminal.id };
+    return { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: terminal.price, priceKind: "terminal_buy", locationName: terminal.location, sourceRecordId: terminal.id };
   }
   const marketplace = records(marketplacePayload).filter((record) =>
-    string(record, ["item_uuid", "commodity_uuid", "uuid_commodity", "id_commodity_uuid"])?.toLowerCase() === commodityUuid.toLowerCase(),
+    integer(record, ["id_item", "item_id"]) === uexItem.idItem,
   );
   for (const record of marketplace) {
     const operation = string(record, ["operation"]);
@@ -128,7 +139,7 @@ export function selectUexPrice(
     if (qualityTier !== null && qualityTier !== 0) continue;
     const average = integer(record, ["price_avg", "price_buy_average", "buy_price_average", "marketplace_average"]);
     if (average !== null && average > 0) {
-      return { uexCommodityUuid: commodityUuid, priceAuec: average, priceKind: "marketplace_average", locationName: null, sourceRecordId: string(record, ["id", "id_commodity_price"]) };
+      return { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: average, priceKind: "marketplace_average", locationName: null, sourceRecordId: string(record, ["id", "id_commodity_price"]) };
     }
   }
   return null;

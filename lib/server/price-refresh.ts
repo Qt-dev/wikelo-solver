@@ -4,7 +4,7 @@ import { gamePatches, itemMappings, items, priceRefreshRuns, priceSnapshots, rec
 import type { VerifiedImport } from "./import-security";
 import { stableId } from "./crypto";
 import { HttpError } from "./http";
-import { fetchUexJson, parseUexCommodities, resolveUexMapping, selectUexPrice } from "./uex";
+import { fetchUexJson, parseUexItems, resolveUexMapping, selectUexPrice } from "./uex";
 
 export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof fetch = fetch) {
   const db = getDb();
@@ -25,17 +25,21 @@ export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof 
       fetchUexJson(pricesUrl, fetchImpl),
       fetchUexJson(marketplaceUrl, fetchImpl),
     ]);
-    const commodities = [
-      ...new Map(
-        [...parseUexCommodities(pricesPayload), ...parseUexCommodities(marketplacePayload)]
-          .map((commodity) => [commodity.uuid, commodity]),
-      ).values(),
-    ];
+    const uexItemsById = new Map<number, ReturnType<typeof parseUexItems>[number]>();
+    for (const uexItem of [...parseUexItems(pricesPayload), ...parseUexItems(marketplacePayload)]) {
+      const current = uexItemsById.get(uexItem.idItem);
+      uexItemsById.set(uexItem.idItem, {
+        ...uexItem,
+        uuid: uexItem.uuid ?? current?.uuid ?? null,
+      });
+    }
+    const uexItems = [...uexItemsById.values()];
     const candidateRows = await db.select({
       itemId: items.id,
       gameItemId: items.gameItemId,
       name: recipeComponents.componentName,
       reviewedAlias: itemMappings.reviewedAlias,
+      existingUexItemId: itemMappings.uexItemId,
       existingUexUuid: itemMappings.uexCommodityUuid,
     }).from(recipeComponents)
       .innerJoin(recipes, eq(recipes.id, recipeComponents.recipeId))
@@ -47,9 +51,10 @@ export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof 
     let snapshotCount = 0;
     const capturedAt = new Date().toISOString();
     for (const item of rows) {
-      const mapping = resolveUexMapping(item, commodities);
+      const mapping = resolveUexMapping(item, uexItems);
       await db.insert(itemMappings).values({
         itemId: item.itemId,
+        uexItemId: mapping.uexItemId,
         uexCommodityUuid: mapping.uexCommodityUuid,
         uexName: mapping.uexName,
         normalizedUexName: mapping.uexName?.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ") ?? null,
@@ -59,15 +64,16 @@ export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof 
         updatedAt: capturedAt,
       }).onConflictDoUpdate({
         target: itemMappings.itemId,
-        set: { uexCommodityUuid: mapping.uexCommodityUuid, uexName: mapping.uexName, status: mapping.status, matchMethod: mapping.matchMethod, updatedAt: capturedAt },
+        set: { uexItemId: mapping.uexItemId, uexCommodityUuid: mapping.uexCommodityUuid, uexName: mapping.uexName, normalizedUexName: mapping.uexName?.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ") ?? null, status: mapping.status, matchMethod: mapping.matchMethod, updatedAt: capturedAt },
       });
-      if (!mapping.uexCommodityUuid) continue;
-      const selected = selectUexPrice(pricesPayload, mapping.uexCommodityUuid, marketplacePayload);
+      if (!mapping.uexItemId) continue;
+      const selected = selectUexPrice(pricesPayload, { idItem: mapping.uexItemId, uuid: mapping.uexCommodityUuid }, marketplacePayload);
       if (!selected) continue;
       const id = await stableId("px", `${runId}:${item.itemId}:${selected.priceKind}:${selected.locationName ?? "market"}`);
       await db.insert(priceSnapshots).values({
         id,
         itemId: item.itemId,
+        uexItemId: selected.uexItemId,
         uexCommodityUuid: selected.uexCommodityUuid,
         priceAuec: selected.priceAuec,
         priceKind: selected.priceKind,

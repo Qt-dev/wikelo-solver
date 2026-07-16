@@ -37,6 +37,7 @@ export async function GET(request: Request) {
       category: recipeComponents.componentCategory,
       quantity: recipeComponents.quantity,
       sortOrder: recipeComponents.sortOrder,
+      uexItemId: itemMappings.uexItemId,
       mappingStatus: itemMappings.status,
     }).from(recipeComponents)
       .innerJoin(items, eq(items.id, recipeComponents.itemId))
@@ -75,6 +76,10 @@ export async function GET(request: Request) {
           if (preference === "needed" && !price) missingPrices.add(component.itemId);
           return {
             itemId: component.itemId,
+            uexItemId: component.uexItemId,
+            uexMarketplaceUrl: component.uexItemId
+              ? `https://uexcorp.space/marketplace/home/?id_item=${component.uexItemId}&unit=unit&mode=list`
+              : null,
             name: component.name,
             category: component.category,
             quantity: component.quantity,

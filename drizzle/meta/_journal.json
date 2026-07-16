@@ -8,6 +8,13 @@
       "when": 1784128992801,
       "tag": "0000_legal_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784166395044,
+      "tag": "0001_flimsy_apocalypse",
+      "breakpoints": true
     }
   ]
 }

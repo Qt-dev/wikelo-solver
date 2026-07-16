@@ -58,6 +58,7 @@ export const itemMappings = sqliteTable(
     itemId: text("item_id")
       .primaryKey()
       .references(() => items.id, { onDelete: "cascade" }),
+    uexItemId: integer("uex_item_id"),
     uexCommodityUuid: text("uex_commodity_uuid"),
     uexName: text("uex_name"),
     normalizedUexName: text("normalized_uex_name"),
@@ -65,18 +66,19 @@ export const itemMappings = sqliteTable(
       .notNull()
       .default("missing"),
     matchMethod: text("match_method", {
-      enum: ["exact_uuid", "reviewed_alias", "exact_normalized_name"],
+      enum: ["exact_id", "exact_uuid", "reviewed_alias", "exact_normalized_name"],
     }),
     reviewedAlias: text("reviewed_alias"),
     reviewedAt: text("reviewed_at"),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
+    index("item_mappings_uex_item_id_idx").on(table.uexItemId),
     index("item_mappings_uex_uuid_idx").on(table.uexCommodityUuid),
     check("item_mappings_status_check", sql`${table.status} in ('matched', 'review', 'missing')`),
     check(
       "item_mappings_method_check",
-      sql`${table.matchMethod} is null or ${table.matchMethod} in ('exact_uuid', 'reviewed_alias', 'exact_normalized_name')`,
+      sql`${table.matchMethod} is null or ${table.matchMethod} in ('exact_id', 'exact_uuid', 'reviewed_alias', 'exact_normalized_name')`,
     ),
   ],
 );
@@ -130,7 +132,8 @@ export const priceSnapshots = sqliteTable(
     itemId: text("item_id")
       .notNull()
       .references(() => items.id, { onDelete: "cascade" }),
-    uexCommodityUuid: text("uex_commodity_uuid").notNull(),
+    uexItemId: integer("uex_item_id"),
+    uexCommodityUuid: text("uex_commodity_uuid"),
     priceAuec: integer("price_auec").notNull(),
     priceKind: text("price_kind", { enum: ["terminal_buy", "marketplace_average"] }).notNull(),
     locationName: text("location_name"),

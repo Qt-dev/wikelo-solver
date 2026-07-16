@@ -438,6 +438,7 @@ export default function RecipePlanner() {
                       </div>
                       <div className="component-data">
                         {mappingMissing && <span className="data-flag mapping">{component.mappingStatus === "review" ? "Mapping needs review" : "UEX mapping missing"}</span>}
+                        {component.uexMarketplaceUrl && <a href={component.uexMarketplaceUrl} target="_blank" rel="noreferrer">UEX market</a>}
                         {component.priceSource && <span>{component.priceSource}{component.priceLocation ? ` · ${component.priceLocation}` : ""}</span>}
                         <span>Price: {formatTimestamp(component.priceCapturedAt)}</span>
                       </div>
