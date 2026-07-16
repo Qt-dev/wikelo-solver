@@ -5,6 +5,7 @@ import { importTypeScript } from "./ts-module-loader.mjs";
 const normalized = await importTypeScript("lib/server/normalized-import.ts");
 const uex = await importTypeScript("lib/server/uex.ts");
 const totals = await importTypeScript("lib/server/recipe-totals.ts");
+const priceIndex = await importTypeScript("lib/server/price-index.ts");
 
 const UUID_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const UUID_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -74,6 +75,14 @@ test("partial allocations price only the units that remain needed", () => {
     { itemId: "favor", quantity: 12, preference: "needed", allocation: { ownedQuantity: 5, farmableQuantity: 4 }, unitPriceAuec: 250000 },
   ]);
   assert.deepEqual(result, { valueAuec: 750000, complete: true, missingItemIds: [] });
+});
+
+test("a saved UEX listing reuses its newest price across item mappings", () => {
+  const oldForListing = { itemId: "old-item", uexItemId: 4385, priceAuec: 250000 };
+  const unrelatedItemFallback = { itemId: "target-item", uexItemId: 12, priceAuec: 99 };
+  const indexed = priceIndex.indexLatestPrices([oldForListing, unrelatedItemFallback]);
+  assert.equal(indexed.byListing.get(4385), oldForListing);
+  assert.equal(indexed.byItem.get("target-item"), unrelatedItemFallback);
 });
 
 test("legacy entityClass categories normalize to resource", () => {

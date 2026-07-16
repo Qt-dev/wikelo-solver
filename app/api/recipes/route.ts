@@ -4,6 +4,7 @@ import { gamePatches, importRuns, itemMappings, items, priceRefreshRuns, priceSn
 import type { ComponentPreferenceStatus, RecipeComponentDto, RecipeDto, RecipesResponse } from "@/lib/contracts/api";
 import { currentSession } from "@/lib/server/auth";
 import { errorResponse, HttpError } from "@/lib/server/http";
+import { indexLatestPrices } from "@/lib/server/price-index";
 import { calculateRecipeTotal } from "@/lib/server/recipe-totals";
 
 const RECIPE_STALE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -55,13 +56,7 @@ export async function GET(request: Request) {
       .innerJoin(priceRefreshRuns, eq(priceRefreshRuns.id, priceSnapshots.refreshRunId))
       .where(eq(priceRefreshRuns.status, "completed"))
       .orderBy(desc(priceSnapshots.capturedAt));
-    const latestPrices = new Map<string, typeof allPrices[number]>();
-    const latestPricesByListing = new Map<string, typeof allPrices[number]>();
-    for (const price of allPrices) {
-      if (!latestPrices.has(price.itemId)) latestPrices.set(price.itemId, price);
-      const listingKey = `${price.itemId}:${price.uexItemId ?? ""}`;
-      if (!latestPricesByListing.has(listingKey)) latestPricesByListing.set(listingKey, price);
-    }
+    const { byItem: latestPrices, byListing: latestPricesByListing } = indexLatestPrices(allPrices);
     const session = await currentSession(request);
     const preferences = session
       ? await db.select().from(userComponentPreferences).where(eq(userComponentPreferences.userId, session.userId))
@@ -87,9 +82,9 @@ export async function GET(request: Request) {
           const preference = (savedPreference?.status ?? "needed") as ComponentPreferenceStatus;
           const priceSetting = priceSettingByItem.get(component.itemId);
           const matchedPrice = priceSetting?.mode === "listing" && priceSetting.uexItemId
-            ? latestPricesByListing.get(`${component.itemId}:${priceSetting.uexItemId}`)
+            ? latestPricesByListing.get(priceSetting.uexItemId)
             : undefined;
-          const price = matchedPrice ?? latestPrices.get(component.itemId);
+          const price = priceSetting?.mode === "listing" ? matchedPrice : latestPrices.get(component.itemId);
           const unitPriceAuec = priceSetting?.mode === "override"
             ? priceSetting.overridePriceAuec
             : price?.priceAuec ?? null;

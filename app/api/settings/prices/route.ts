@@ -13,6 +13,7 @@ import {
 import type { PriceSettingsResponse } from "@/lib/contracts/api";
 import { requireSession } from "@/lib/server/auth";
 import { assertSameOrigin, errorResponse, HttpError } from "@/lib/server/http";
+import { indexLatestPrices } from "@/lib/server/price-index";
 
 export async function GET(request: Request) {
   try {
@@ -41,11 +42,12 @@ export async function GET(request: Request) {
         .orderBy(desc(priceSnapshots.capturedAt)),
     ]);
     const settingByItem = new Map(settings.map((setting) => [setting.itemId, setting]));
+    const { byItem: latestPricesByItem, byListing: latestPricesByListing } = indexLatestPrices(prices);
     const payload: PriceSettingsResponse = {
       settings: activeItems.map((item) => {
         const setting = settingByItem.get(item.itemId);
         const listingId = setting?.mode === "listing" ? setting.uexItemId : item.uexItemId;
-        const price = prices.find((entry) => entry.itemId === item.itemId && (listingId ? entry.uexItemId === listingId : true));
+        const price = listingId ? latestPricesByListing.get(listingId) : latestPricesByItem.get(item.itemId);
         return {
           itemId: item.itemId,
           name: item.name,
