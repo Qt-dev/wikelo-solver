@@ -230,6 +230,8 @@ export const userComponentPreferences = sqliteTable(
       .notNull()
       .references(() => items.id, { onDelete: "cascade" }),
     status: text("status", { enum: ["needed", "owned", "farmable"] }).notNull(),
+    ownedQuantity: integer("owned_quantity").notNull().default(0),
+    farmableQuantity: integer("farmable_quantity").notNull().default(0),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
@@ -238,6 +240,32 @@ export const userComponentPreferences = sqliteTable(
     check(
       "user_component_preferences_status_check",
       sql`${table.status} in ('needed', 'owned', 'farmable')`,
+    ),
+  ],
+);
+
+export const userPriceSettings = sqliteTable(
+  "user_price_settings",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    mode: text("mode", { enum: ["override", "listing"] }).notNull(),
+    overridePriceAuec: integer("override_price_auec"),
+    uexItemId: integer("uex_item_id"),
+    uexName: text("uex_name"),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.itemId] }),
+    index("user_price_settings_item_idx").on(table.itemId),
+    check("user_price_settings_mode_check", sql`${table.mode} in ('override', 'listing')`),
+    check(
+      "user_price_settings_value_check",
+      sql`(${table.mode} = 'override' and ${table.overridePriceAuec} is not null and ${table.overridePriceAuec} >= 0) or (${table.mode} = 'listing' and ${table.uexItemId} is not null and ${table.uexItemId} > 0)`,
     ),
   ],
 );

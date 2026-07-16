@@ -1,5 +1,10 @@
 export type ComponentPreferenceStatus = "needed" | "owned" | "farmable";
 
+export type ComponentAllocation = {
+  ownedQuantity: number;
+  farmableQuantity: number;
+};
+
 export type PatchSummary = {
   id: string;
   version: string;
@@ -16,11 +21,31 @@ export type RecipeComponentDto = {
   category: string;
   quantity: number;
   preference: ComponentPreferenceStatus;
+  allocation: ComponentAllocation;
   unitPriceAuec: number | null;
   priceSource: string | null;
   priceLocation: string | null;
   priceCapturedAt: string | null;
   mappingStatus: "matched" | "review" | "missing";
+  priceMode: "uex" | "override" | "matched_listing";
+};
+
+export type PriceSettingDto = {
+  itemId: string;
+  name: string;
+  category: string;
+  currentUexItemId: number | null;
+  currentUexName: string | null;
+  currentUnitPriceAuec: number | null;
+  mode: "override" | "listing" | null;
+  overridePriceAuec: number | null;
+  matchedUexItemId: number | null;
+  matchedUexName: string | null;
+  updatedAt: string | null;
+};
+
+export type PriceSettingsResponse = {
+  settings: PriceSettingDto[];
 };
 
 export type RecipeDto = {

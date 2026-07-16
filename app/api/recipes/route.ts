@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
-import { gamePatches, importRuns, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipes, userComponentPreferences } from "@/db/schema";
+import { gamePatches, importRuns, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipes, userComponentPreferences, userPriceSettings } from "@/db/schema";
 import type { ComponentPreferenceStatus, RecipeComponentDto, RecipeDto, RecipesResponse } from "@/lib/contracts/api";
 import { currentSession } from "@/lib/server/auth";
 import { errorResponse, HttpError } from "@/lib/server/http";
@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     const allPrices = await db.select({
       id: priceSnapshots.id,
       itemId: priceSnapshots.itemId,
+      uexItemId: priceSnapshots.uexItemId,
       priceAuec: priceSnapshots.priceAuec,
       locationName: priceSnapshots.locationName,
       capturedAt: priceSnapshots.capturedAt,
@@ -55,12 +56,21 @@ export async function GET(request: Request) {
       .where(eq(priceRefreshRuns.status, "completed"))
       .orderBy(desc(priceSnapshots.capturedAt));
     const latestPrices = new Map<string, typeof allPrices[number]>();
-    for (const price of allPrices) if (!latestPrices.has(price.itemId)) latestPrices.set(price.itemId, price);
+    const latestPricesByListing = new Map<string, typeof allPrices[number]>();
+    for (const price of allPrices) {
+      if (!latestPrices.has(price.itemId)) latestPrices.set(price.itemId, price);
+      const listingKey = `${price.itemId}:${price.uexItemId ?? ""}`;
+      if (!latestPricesByListing.has(listingKey)) latestPricesByListing.set(listingKey, price);
+    }
     const session = await currentSession(request);
     const preferences = session
       ? await db.select().from(userComponentPreferences).where(eq(userComponentPreferences.userId, session.userId))
       : [];
-    const preferenceByItem = new Map(preferences.map((preference) => [preference.itemId, preference.status]));
+    const preferenceByItem = new Map(preferences.map((preference) => [preference.itemId, preference]));
+    const priceSettings = session
+      ? await db.select().from(userPriceSettings).where(eq(userPriceSettings.userId, session.userId))
+      : [];
+    const priceSettingByItem = new Map(priceSettings.map((setting) => [setting.itemId, setting]));
     const missingMappings = new Set<string>();
     const missingPrices = new Set<string>();
 
@@ -69,26 +79,41 @@ export async function GET(request: Request) {
         .filter((component) => component.recipeId === recipe.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)
         .map((component) => {
-          const price = latestPrices.get(component.itemId);
-          const preference = (preferenceByItem.get(component.itemId) ?? "needed") as ComponentPreferenceStatus;
+          const savedPreference = preferenceByItem.get(component.itemId);
+          const allocation = {
+            ownedQuantity: savedPreference?.ownedQuantity ?? (savedPreference?.status === "owned" ? component.quantity : 0),
+            farmableQuantity: savedPreference?.farmableQuantity ?? (savedPreference?.status === "farmable" ? component.quantity : 0),
+          };
+          const preference = (savedPreference?.status ?? "needed") as ComponentPreferenceStatus;
+          const priceSetting = priceSettingByItem.get(component.itemId);
+          const matchedPrice = priceSetting?.mode === "listing" && priceSetting.uexItemId
+            ? latestPricesByListing.get(`${component.itemId}:${priceSetting.uexItemId}`)
+            : undefined;
+          const price = matchedPrice ?? latestPrices.get(component.itemId);
+          const unitPriceAuec = priceSetting?.mode === "override"
+            ? priceSetting.overridePriceAuec
+            : price?.priceAuec ?? null;
+          const effectiveUexItemId = priceSetting?.mode === "listing" ? priceSetting.uexItemId : component.uexItemId;
           const mappingStatus = component.mappingStatus ?? "missing";
-          if (mappingStatus !== "matched") missingMappings.add(component.itemId);
-          if (preference === "needed" && !price) missingPrices.add(component.itemId);
+          if (mappingStatus !== "matched" && priceSetting?.mode !== "listing") missingMappings.add(component.itemId);
+          if (allocation.ownedQuantity + allocation.farmableQuantity < component.quantity && unitPriceAuec === null) missingPrices.add(component.itemId);
           return {
             itemId: component.itemId,
-            uexItemId: component.uexItemId,
-            uexMarketplaceUrl: component.uexItemId
-              ? `https://uexcorp.space/marketplace/home/?id_item=${component.uexItemId}&unit=unit&mode=list`
+            uexItemId: effectiveUexItemId,
+            uexMarketplaceUrl: effectiveUexItemId
+              ? `https://uexcorp.space/marketplace/home/?id_item=${effectiveUexItemId}&unit=unit&mode=list`
               : null,
             name: component.name,
             category: component.category,
             quantity: component.quantity,
             preference,
-            unitPriceAuec: price?.priceAuec ?? null,
-            priceSource: price?.source ?? null,
+            allocation,
+            unitPriceAuec,
+            priceSource: priceSetting?.mode === "override" ? "Personal override" : priceSetting?.mode === "listing" ? "Matched UEX listing" : price?.source ?? null,
             priceLocation: price?.locationName ?? null,
             priceCapturedAt: price?.capturedAt ?? null,
-            mappingStatus,
+            mappingStatus: priceSetting?.mode === "listing" ? "matched" : mappingStatus,
+            priceMode: priceSetting?.mode === "override" ? "override" : priceSetting?.mode === "listing" ? "matched_listing" : "uex",
           };
         });
       return {

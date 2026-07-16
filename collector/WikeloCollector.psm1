@@ -591,7 +591,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
                     $reference = Resolve-WikeloReferenceName $referenceId $referenceNames $localization
                     if ($referenceId) {
                         $amount = ConvertTo-WikeloNumber (Get-WikeloXmlValue $entity @('minAmount','maxAmount')) 1
-                        $requirements.Add([ordered]@{ gameItemId = $referenceId; name = $reference; category = 'entityClass'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
+                        $requirements.Add([ordered]@{ gameItemId = $referenceId; name = $reference; category = 'resource'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
                     }
                 }
                 foreach ($resource in @($property.SelectNodes(".//*[local-name()='HaulingOrderContent_Resource']"))) {

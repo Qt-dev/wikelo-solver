@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { gamePatches, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipes } from "@/db/schema";
+import { gamePatches, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipes, userPriceSettings } from "@/db/schema";
 import type { VerifiedImport } from "./import-security";
 import { stableId } from "./crypto";
 import { HttpError } from "./http";
@@ -79,6 +79,33 @@ export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof 
         priceKind: selected.priceKind,
         locationName: selected.locationName,
         capturedAt,
+        sourceRecordId: selected.sourceRecordId,
+        refreshRunId: runId,
+      });
+      snapshotCount += 1;
+    }
+    const customListings = await db.select({ itemId: userPriceSettings.itemId, uexItemId: userPriceSettings.uexItemId })
+      .from(userPriceSettings)
+      .where(eq(userPriceSettings.mode, "listing"));
+    const uniqueCustomListings = [...new Map(customListings
+      .filter((setting): setting is { itemId: string; uexItemId: number } => Boolean(setting.uexItemId))
+      .map((setting) => [`${setting.itemId}:${setting.uexItemId}`, setting])).values()];
+    for (const setting of uniqueCustomListings) {
+      const uexItem = uexItemsById.get(setting.uexItemId);
+      if (!uexItem) continue;
+      const selected = selectUexPrice(pricesPayload, uexItem, marketplacePayload);
+      if (!selected) continue;
+      const id = await stableId("px", `${runId}:${setting.itemId}:listing:${setting.uexItemId}:${selected.priceKind}`);
+      await db.insert(priceSnapshots).values({
+        id,
+        itemId: setting.itemId,
+        uexItemId: selected.uexItemId,
+        uexCommodityUuid: selected.uexCommodityUuid,
+        priceAuec: selected.priceAuec,
+        priceKind: selected.priceKind,
+        locationName: selected.locationName,
+        capturedAt,
+        source: "uex-user-match",
         sourceRecordId: selected.sourceRecordId,
         refreshRunId: runId,
       });

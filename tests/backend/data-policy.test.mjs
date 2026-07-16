@@ -68,3 +68,21 @@ test("owned and farmable components cost zero while needed missing prices stay i
   ]);
   assert.deepEqual(result, { valueAuec: 20, complete: false, missingItemIds: ["needed-missing"] });
 });
+
+test("partial allocations price only the units that remain needed", () => {
+  const result = totals.calculateRecipeTotal([
+    { itemId: "favor", quantity: 12, preference: "needed", allocation: { ownedQuantity: 5, farmableQuantity: 4 }, unitPriceAuec: 250000 },
+  ]);
+  assert.deepEqual(result, { valueAuec: 750000, complete: true, missingItemIds: [] });
+});
+
+test("legacy entityClass categories normalize to resource", () => {
+  const payload = {
+    schema: "wikelo-normalized-v1",
+    patch: { version: "4.2", build: "123", channel: "LIVE", sourceHash: "b".repeat(64), extractedAt: "2026-07-15T00:00:00Z" },
+    recipes: [{ gameRecipeId: "r2", name: "Recipe", category: "entityClass", output: { gameItemId: null, name: "Output", quantity: 1 }, reputationNeeded: 0, reputationGranted: 5, components: [{ gameItemId: "i2", name: "Favor", category: "entityClass", quantity: 2 }] }],
+  };
+  const parsed = normalized.parseNormalizedImport(payload);
+  assert.equal(parsed.recipes[0].category, "resource");
+  assert.equal(parsed.recipes[0].components[0].category, "resource");
+});

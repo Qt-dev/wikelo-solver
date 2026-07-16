@@ -58,6 +58,7 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
       throw new HttpError(400, `Recipe ${recipeIndex} is invalid or incomplete.`, "invalid_import");
     }
     recipeIds.add(recipe.gameRecipeId);
+    if (recipe.category.toLocaleLowerCase("en-US") === "entityclass") recipe.category = "resource";
     const componentIds = new Set<string>();
     for (const [componentIndex, component] of recipe.components.entries()) {
       if (
@@ -75,6 +76,7 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
         );
       }
       componentIds.add(component.gameItemId);
+      if (component.category.toLocaleLowerCase("en-US") === "entityclass") component.category = "resource";
     }
   }
   return candidate as NormalizedImportV1;

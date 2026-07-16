@@ -15,6 +15,13 @@
       "when": 1784166395044,
       "tag": "0001_flimsy_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784185595130,
+      "tag": "0002_mighty_serpent_society",
+      "breakpoints": true
     }
   ]
 }
