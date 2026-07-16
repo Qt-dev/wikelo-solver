@@ -1,0 +1,10 @@
+<EntityClassDefinition.reward_token __ref="@reward_token">
+  <StaticEntityClassData>
+    <EntityUIDisplayParams displayName="@LOC_UNINITIALIZED" />
+  </StaticEntityClassData>
+  <Components>
+    <AttachDef>
+      <Localization Name="@item_Name_reward_token" />
+    </AttachDef>
+  </Components>
+</EntityClassDefinition.reward_token>

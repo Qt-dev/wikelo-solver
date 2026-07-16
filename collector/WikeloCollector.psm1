@@ -519,6 +519,7 @@ function Get-WikeloXmlRootMetadata {
             if ($reader.NodeType -eq [Xml.XmlNodeType]::Element) {
                 $ref = $reader.GetAttribute('__ref')
                 $name = @('Name', 'name', 'DisplayName', 'displayName', 'debugName') | ForEach-Object { $reader.GetAttribute($_) } | Where-Object { $_ } | Select-Object -First 1
+                if ($name -in @('@LOC_UNINITIALIZED', '@LOC_EMPTY', 'LOC_UNINITIALIZED', 'LOC_EMPTY')) { $name = $null }
                 if ($reader.Depth -eq 0 -and $ref) {
                     $rootRef = $ref
                     if ($name) { $rootName = $name }
