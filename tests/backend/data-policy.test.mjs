@@ -13,7 +13,7 @@ test("normalized imports require complete recipes and positive quantities", () =
   const valid = {
     schema: "wikelo-normalized-v1",
     patch: { version: "4.2", build: "123", channel: "LIVE", sourceHash: "a".repeat(64), extractedAt: "2026-07-15T00:00:00Z" },
-    recipes: [{ gameRecipeId: "r1", name: "Recipe", category: "armor", output: { gameItemId: null, name: "Output", quantity: 1 }, reputationNeeded: 0, reputationGranted: 5, components: [{ gameItemId: "i1", name: "Iron", category: "material", quantity: 2 }] }],
+    recipes: [{ gameRecipeId: "r1", name: "Recipe", category: "armor", output: { gameItemId: null, name: "Output", quantity: 1 }, outputs: [{ gameItemId: null, name: "Output", quantity: 1 }], reputationNeeded: 0, reputationNeededLabel: null, reputationGranted: 5, components: [{ gameItemId: "i1", name: "Iron", category: "material", quantity: 2 }] }],
   };
   assert.equal(normalized.parseNormalizedImport(valid), valid);
   assert.throws(() => normalized.parseNormalizedImport({ ...valid, recipes: [{ ...valid.recipes[0], components: [] }] }), /invalid or incomplete/i);
@@ -34,30 +34,44 @@ test("Wikelo Favor matches by id_item even when UEX has no game UUID", () => {
   const mapping = uex.resolveUexMapping({ itemId: "favor", gameItemId: "game-favor", name: "Wikelo Favor" }, uex.parseUexItems(payload));
   assert.equal(mapping.uexItemId, 4385);
   assert.equal(mapping.matchMethod, "exact_normalized_name");
-  assert.deepEqual(uex.selectUexPrice({ data: [] }, { idItem: 4385, uuid: null }, payload), {
+  const listings = { data: [{ id_item: 4385, operation: "sell", currency: "UEC", unit: "unit", price: 250000, in_stock: 1, id: 99 }] };
+  assert.deepEqual(uex.selectUexPrice({ data: [] }, { idItem: 4385, uuid: null }, listings), {
     uexItemId: 4385,
     uexCommodityUuid: null,
     priceAuec: 250000,
-    priceKind: "marketplace_average",
+    priceKind: "marketplace_listing",
     locationName: null,
-    sourceRecordId: "wif",
+    sourceRecordId: "99",
   });
 });
 
-test("lowest terminal buy wins and marketplace average is fallback", () => {
+test("lowest valid acquisition price wins across terminals and marketplace listings", () => {
   const prices = { data: [
     { id_item: 10, item_uuid: UUID_A, item_name: "Golden Medmon", terminal_name: "High", price_buy: 120, id: "1" },
     { id_item: 10, item_uuid: UUID_A, item_name: "Golden Medmon", terminal_name: "Low", price_buy: 80, id: "2" },
   ] };
   const marketplace = { data: [
-    { id_item: 11, item_uuid: UUID_B, item_name: "Copper", operation: "sell", currency: "AUEC", quality_tier: 0, price_avg: 12, id: "sell" },
-    { id_item: 11, item_uuid: UUID_B, item_name: "Copper", operation: "buy", currency: "AUEC", quality_tier: 1, price_avg: 20, id: "tiered" },
-    { id_item: 11, item_uuid: UUID_B, item_name: "Copper", operation: "buy", currency: "AUEC", quality_tier: 0, price_avg: 47, id: "3" },
+    { id_item: 11, operation: "sell", currency: "AUEC", unit: "pack", price: 12, in_stock: 1, id: "pack" },
+    { id_item: 11, operation: "buy", currency: "AUEC", unit: "unit", price: 20, in_stock: 1, id: "bid" },
+    { id_item: 11, operation: "sell", currency: "AUEC", unit: "unit", price: 47, in_stock: 1, id: 3, location: "Area18" },
+    { id_item: 11, operation: "sell", currency: "AUEC", unit: "unit", price: 50, in_stock: 2, id: 4 },
   ] };
   assert.deepEqual(uex.selectUexPrice(prices, { idItem: 10, uuid: UUID_A }, marketplace), { uexItemId: 10, uexCommodityUuid: UUID_A, priceAuec: 80, priceKind: "terminal_buy", locationName: "Low", sourceRecordId: "2" });
-  assert.equal(uex.selectUexPrice(prices, { idItem: 11, uuid: UUID_B }, marketplace).priceKind, "marketplace_average");
+  assert.deepEqual(uex.selectUexPrice(prices, { idItem: 11, uuid: UUID_B }, marketplace), { uexItemId: 11, uexCommodityUuid: UUID_B, priceAuec: 47, priceKind: "marketplace_listing", locationName: "Area18", sourceRecordId: "3" });
   assert.equal(uex.selectUexPrice(prices, { idItem: 12, uuid: null }, marketplace), null);
   assert.deepEqual(uex.parseUexItems(prices), [{ idItem: 10, uuid: UUID_A, name: "Golden Medmon" }, { idItem: 10, uuid: UUID_A, name: "Golden Medmon" }]);
+});
+
+test("an outrageously low marketplace listing is skipped unless another listing corroborates it", () => {
+  const listing = (id, price) => ({ id, id_item: 4741, operation: "sell", currency: "UEC", unit: "unit", price, in_stock: 1 });
+  const outlier = uex.selectUexPrice({ data: [] }, { idItem: 4741, uuid: null }, { data: [listing(1, 100), listing(2, 1000), listing(3, 1100)] });
+  assert.equal(outlier.priceAuec, 1000);
+  const corroborated = uex.selectUexPrice({ data: [] }, { idItem: 4741, uuid: null }, { data: [listing(1, 100), listing(2, 100), listing(3, 1000)] });
+  assert.equal(corroborated.priceAuec, 100);
+});
+
+test("marketplace listing URLs request all active sale listings for one item", () => {
+  assert.equal(uex.marketplaceListingsUrl("https://api.uexcorp.uk/2.0/marketplace_prices_averages_all", 4741), "https://api.uexcorp.uk/2.0/marketplace_listings?id_item=4741&operation=sell");
 });
 
 test("owned and farmable components cost zero while needed missing prices stay incomplete", () => {

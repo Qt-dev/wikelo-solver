@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
-import { gamePatches, importRuns, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipes, userComponentPreferences } from "@/db/schema";
+import { gamePatches, importRuns, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipeOutputs, recipes, userComponentPreferences } from "@/db/schema";
 import type { ComponentPreferenceStatus, RecipeComponentDto, RecipeDto, RecipesResponse } from "@/lib/contracts/api";
 import { currentSession } from "@/lib/server/auth";
 import { errorResponse, HttpError } from "@/lib/server/http";
@@ -30,6 +30,7 @@ export async function GET(request: Request) {
     }
 
     const recipeRows = await db.select().from(recipes).where(eq(recipes.patchId, patch.id)).orderBy(asc(recipes.name));
+    const outputRows = await db.select().from(recipeOutputs);
     const componentRows = await db.select({
       recipeId: recipeComponents.recipeId,
       itemId: items.id,
@@ -65,6 +66,9 @@ export async function GET(request: Request) {
     const missingPrices = new Set<string>();
 
     const payloadRecipes: RecipeDto[] = recipeRows.map((recipe) => {
+      const outputs = outputRows.filter((output) => output.recipeId === recipe.id)
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+        .map((output) => ({ itemId: output.itemId, name: output.outputName, quantity: output.quantity }));
       const components: RecipeComponentDto[] = activeComponents
         .filter((component) => component.recipeId === recipe.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)
@@ -96,7 +100,9 @@ export async function GET(request: Request) {
         name: recipe.name,
         category: recipe.category,
         output: { itemId: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity },
+        outputs: outputs.length ? outputs : [{ itemId: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity }],
         reputationNeeded: recipe.reputationNeeded,
+        reputationNeededLabel: recipe.reputationNeededLabel,
         reputationGranted: recipe.reputationGranted,
         components,
         total: calculateRecipeTotal(components),

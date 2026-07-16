@@ -25,10 +25,12 @@ export type SelectedUexPrice = {
   uexItemId: number;
   uexCommodityUuid: string | null;
   priceAuec: number;
-  priceKind: "terminal_buy" | "marketplace_average";
+  priceKind: "terminal_buy" | "marketplace_listing";
   locationName: string | null;
   sourceRecordId: string | null;
 };
+
+export const MARKETPLACE_LOW_OUTLIER_RATIO = 0.5;
 
 function object(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -56,6 +58,15 @@ function integer(record: JsonObject, keys: readonly string[]) {
     const raw = record[key];
     const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
     if (Number.isFinite(value) && value >= 0) return Math.round(value);
+  }
+  return null;
+}
+
+function identifier(record: JsonObject, keys: readonly string[]) {
+  for (const key of keys) {
+    const raw = record[key];
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+    if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
   }
   return null;
 }
@@ -107,11 +118,15 @@ export function resolveUexMapping(
   return { itemId: item.itemId, uexItemId: null, uexCommodityUuid: null, uexName: null, status: names.length > 1 ? "review" : "missing", matchMethod: null };
 }
 
-/** Selects the lowest positive terminal buy; marketplace average is fallback only. */
+/**
+ * Selects the lowest acquisition price from terminals and active per-unit seller
+ * listings. Marketplace lows below half of the next listing are discarded as
+ * likely outliers until the remaining lowest pair is plausible.
+ */
 export function selectUexPrice(
   terminalPayload: unknown,
   uexItem: Pick<UexItem, "idItem" | "uuid">,
-  marketplacePayload: unknown = terminalPayload,
+  marketplaceListingsPayload: unknown = terminalPayload,
 ): SelectedUexPrice | null {
   const matching = records(terminalPayload).filter((record) =>
     integer(record, ["id_item", "item_id"]) === uexItem.idItem,
@@ -121,28 +136,54 @@ export function selectUexPrice(
     const location = string(record, ["terminal_name", "name_terminal", "location_name"]);
     const active = record.is_available !== false && record.status !== "inactive";
     return price !== null && price > 0 && location && active
-      ? [{ price, location, id: string(record, ["id", "id_commodity_price"]) }]
+      ? [{ price, location, id: identifier(record, ["id", "id_commodity_price"]) }]
       : [];
   }).sort((left, right) => left.price - right.price)[0];
-  if (terminal) {
-    return { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: terminal.price, priceKind: "terminal_buy", locationName: terminal.location, sourceRecordId: terminal.id };
-  }
-  const marketplace = records(marketplacePayload).filter((record) =>
+  const marketplace = records(marketplaceListingsPayload).filter((record) =>
     integer(record, ["id_item", "item_id"]) === uexItem.idItem,
   );
-  for (const record of marketplace) {
+  const listings = marketplace.flatMap((record) => {
     const operation = string(record, ["operation"]);
     const currency = string(record, ["currency"]);
-    const qualityTier = integer(record, ["quality_tier"]);
-    if (operation && operation.toLowerCase() !== "buy") continue;
-    if (currency && !["auec", "uec"].includes(currency.toLowerCase())) continue;
-    if (qualityTier !== null && qualityTier !== 0) continue;
-    const average = integer(record, ["price_avg", "price_buy_average", "buy_price_average", "marketplace_average"]);
-    if (average !== null && average > 0) {
-      return { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: average, priceKind: "marketplace_average", locationName: null, sourceRecordId: string(record, ["id", "id_commodity_price"]) };
-    }
+    const unit = string(record, ["unit"]);
+    const price = integer(record, ["price"]);
+    const soldOut = record.is_sold_out === true || integer(record, ["is_sold_out"]) === 1;
+    const stock = integer(record, ["in_stock"]);
+    const inactive = record.status === "inactive";
+    return operation?.toLowerCase() === "sell"
+      && currency !== null && ["auec", "uec"].includes(currency.toLowerCase())
+      && unit?.toLowerCase() === "unit"
+      && price !== null && price > 0
+      && !soldOut && stock !== 0 && !inactive
+      ? [{ price, location: string(record, ["location"]), id: identifier(record, ["id", "id_listing"]) }]
+      : [];
+  }).sort((left, right) => left.price - right.price || (left.id ?? "").localeCompare(right.id ?? ""));
+
+  let listingIndex = 0;
+  while (
+    listingIndex < listings.length - 1
+    && listings[listingIndex].price < listings[listingIndex + 1].price * MARKETPLACE_LOW_OUTLIER_RATIO
+  ) listingIndex += 1;
+  const listing = listings[listingIndex];
+
+  if (terminal && (!listing || terminal.price <= listing.price)) {
+    return { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: terminal.price, priceKind: "terminal_buy", locationName: terminal.location, sourceRecordId: terminal.id };
   }
-  return null;
+  return listing
+    ? { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: listing.price, priceKind: "marketplace_listing", locationName: listing.location, sourceRecordId: listing.id }
+    : null;
+}
+
+export function marketplaceListingsUrl(marketplacePricesEndpoint: string, idItem: number) {
+  if (!Number.isSafeInteger(idItem) || idItem <= 0) throw new Error("UEX item ID must be a positive integer.");
+  const url = new URL(marketplacePricesEndpoint);
+  if (!UEX_API_ORIGINS.has(url.origin)) throw new Error("UEX endpoint must use an approved official API origin.");
+  const apiVersion = url.pathname.split("/").filter(Boolean)[0] ?? "2.0";
+  url.pathname = `/${apiVersion}/marketplace_listings`;
+  url.search = "";
+  url.searchParams.set("id_item", String(idItem));
+  url.searchParams.set("operation", "sell");
+  return url.toString();
 }
 
 export async function fetchUexJson(endpoint: string, fetchImpl: typeof fetch = fetch) {

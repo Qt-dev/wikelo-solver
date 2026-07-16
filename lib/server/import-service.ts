@@ -1,6 +1,6 @@
 import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
-import { gamePatches, importRuns, itemMappings, items, recipeComponents, recipes } from "@/db/schema";
+import { gamePatches, importRuns, itemMappings, items, recipeComponents, recipeOutputs, recipes } from "@/db/schema";
 import type { NormalizedImportV1 } from "@/lib/contracts/api";
 import type { VerifiedImport } from "./import-security";
 import { stableId } from "./crypto";
@@ -69,7 +69,7 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
     await db.update(importRuns).set({ patchId }).where(eq(importRuns.id, runId));
 
     const allItemInputs = document.recipes.flatMap((recipe) => [
-      ...(recipe.output.gameItemId ? [{ gameItemId: recipe.output.gameItemId, name: recipe.output.name, category: recipe.category }] : []),
+      ...recipe.outputs.filter((output) => output.gameItemId).map((output) => ({ gameItemId: output.gameItemId!, name: output.name, category: recipe.category })),
       ...recipe.components,
     ]);
     const uniqueItems = new Map(allItemInputs.map((item) => [item.gameItemId, item]));
@@ -103,6 +103,7 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
         outputName: recipe.output.name,
         outputQuantity: recipe.output.quantity,
         reputationNeeded: recipe.reputationNeeded,
+        reputationNeededLabel: recipe.reputationNeededLabel,
         reputationGranted: recipe.reputationGranted,
       });
       for (const [sortOrder, component] of recipe.components.entries()) {
@@ -112,6 +113,15 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
           componentName: component.name,
           componentCategory: component.category,
           quantity: component.quantity,
+          sortOrder,
+        });
+      }
+      for (const [sortOrder, output] of recipe.outputs.entries()) {
+        await db.insert(recipeOutputs).values({
+          recipeId,
+          itemId: output.gameItemId ? itemIds.get(output.gameItemId) ?? null : null,
+          outputName: output.name,
+          quantity: output.quantity,
           sortOrder,
         });
       }

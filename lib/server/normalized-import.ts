@@ -50,7 +50,10 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
       (recipe.output.gameItemId !== null && !nonEmpty(recipe.output.gameItemId)) ||
       !nonEmpty(recipe.output.name) ||
       !positiveInteger(recipe.output.quantity) ||
+      !Array.isArray(recipe.outputs) ||
+      recipe.outputs.length === 0 ||
       !nonNegativeInteger(recipe.reputationNeeded) ||
+      (recipe.reputationNeededLabel !== null && !nonEmpty(recipe.reputationNeededLabel)) ||
       !nonNegativeInteger(recipe.reputationGranted) ||
       !Array.isArray(recipe.components) ||
       recipe.components.length === 0
@@ -58,6 +61,16 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
       throw new HttpError(400, `Recipe ${recipeIndex} is invalid or incomplete.`, "invalid_import");
     }
     recipeIds.add(recipe.gameRecipeId);
+    for (const [outputIndex, output] of recipe.outputs.entries()) {
+      if (
+        !output ||
+        (output.gameItemId !== null && !nonEmpty(output.gameItemId)) ||
+        !nonEmpty(output.name) ||
+        !positiveInteger(output.quantity)
+      ) {
+        throw new HttpError(400, `Recipe ${recipeIndex} output ${outputIndex} is invalid.`, "invalid_import");
+      }
+    }
     const componentIds = new Set<string>();
     for (const [componentIndex, component] of recipe.components.entries()) {
       if (

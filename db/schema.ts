@@ -97,6 +97,7 @@ export const recipes = sqliteTable(
     outputName: text("output_name").notNull(),
     outputQuantity: integer("output_quantity").notNull(),
     reputationNeeded: integer("reputation_needed").notNull().default(0),
+    reputationNeededLabel: text("reputation_needed_label"),
     reputationGranted: integer("reputation_granted").notNull().default(0),
   },
   (table) => [
@@ -125,6 +126,23 @@ export const recipeComponents = sqliteTable(
   ],
 );
 
+export const recipeOutputs = sqliteTable(
+  "recipe_outputs",
+  {
+    recipeId: text("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    itemId: text("item_id").references(() => items.id, { onDelete: "set null" }),
+    outputName: text("output_name").notNull(),
+    quantity: integer("quantity").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.recipeId, table.sortOrder] }),
+    index("recipe_outputs_item_id_idx").on(table.itemId),
+  ],
+);
+
 export const priceSnapshots = sqliteTable(
   "price_snapshots",
   {
@@ -135,7 +153,7 @@ export const priceSnapshots = sqliteTable(
     uexItemId: integer("uex_item_id"),
     uexCommodityUuid: text("uex_commodity_uuid"),
     priceAuec: integer("price_auec").notNull(),
-    priceKind: text("price_kind", { enum: ["terminal_buy", "marketplace_average"] }).notNull(),
+    priceKind: text("price_kind", { enum: ["terminal_buy", "marketplace_average", "marketplace_listing"] }).notNull(),
     locationName: text("location_name"),
     capturedAt: text("captured_at").notNull(),
     source: text("source").notNull().default("uex"),
@@ -148,7 +166,7 @@ export const priceSnapshots = sqliteTable(
     check("price_snapshots_price_check", sql`${table.priceAuec} >= 0`),
     check(
       "price_snapshots_kind_check",
-      sql`${table.priceKind} in ('terminal_buy', 'marketplace_average')`,
+      sql`${table.priceKind} in ('terminal_buy', 'marketplace_average', 'marketplace_listing')`,
     ),
   ],
 );

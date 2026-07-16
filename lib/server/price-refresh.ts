@@ -4,7 +4,23 @@ import { gamePatches, itemMappings, items, priceRefreshRuns, priceSnapshots, rec
 import type { VerifiedImport } from "./import-security";
 import { stableId } from "./crypto";
 import { HttpError } from "./http";
-import { fetchUexJson, parseUexItems, resolveUexMapping, selectUexPrice } from "./uex";
+import { fetchUexJson, marketplaceListingsUrl, parseUexItems, resolveUexMapping, selectUexPrice } from "./uex";
+
+const UEX_LISTING_FETCH_CONCURRENCY = 6;
+
+async function mapWithConcurrency<T, R>(items: readonly T[], concurrency: number, task: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await task(items[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
 
 export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof fetch = fetch) {
   const db = getDb();
@@ -48,8 +64,8 @@ export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof 
       .leftJoin(itemMappings, eq(itemMappings.itemId, items.id))
       .where(eq(gamePatches.activationState, "active"));
     const rows = [...new Map(candidateRows.map((row) => [row.itemId, row])).values()];
-    let snapshotCount = 0;
     const capturedAt = new Date().toISOString();
+    const resolvedRows: Array<{ item: typeof rows[number]; mapping: ReturnType<typeof resolveUexMapping> }> = [];
     for (const item of rows) {
       const mapping = resolveUexMapping(item, uexItems);
       await db.insert(itemMappings).values({
@@ -67,7 +83,14 @@ export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof 
         set: { uexItemId: mapping.uexItemId, uexCommodityUuid: mapping.uexCommodityUuid, uexName: mapping.uexName, normalizedUexName: mapping.uexName?.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ") ?? null, status: mapping.status, matchMethod: mapping.matchMethod, updatedAt: capturedAt },
       });
       if (!mapping.uexItemId) continue;
-      const selected = selectUexPrice(pricesPayload, { idItem: mapping.uexItemId, uuid: mapping.uexCommodityUuid }, marketplacePayload);
+      resolvedRows.push({ item, mapping });
+    }
+    const pricedRows = await mapWithConcurrency(resolvedRows, UEX_LISTING_FETCH_CONCURRENCY, async ({ item, mapping }) => {
+      const listingsPayload = await fetchUexJson(marketplaceListingsUrl(marketplaceUrl, mapping.uexItemId!), fetchImpl);
+      return { item, mapping, selected: selectUexPrice(pricesPayload, { idItem: mapping.uexItemId!, uuid: mapping.uexCommodityUuid }, listingsPayload) };
+    });
+    let snapshotCount = 0;
+    for (const { item, selected } of pricedRows) {
       if (!selected) continue;
       const id = await stableId("px", `${runId}:${item.itemId}:${selected.priceKind}:${selected.locationName ?? "market"}`);
       await db.insert(priceSnapshots).values({

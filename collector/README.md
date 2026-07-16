@@ -37,10 +37,17 @@ Preview only:
 
 ```powershell
 .\collector\Install-WikeloCollector.ps1 -DryRun
+.\collector\Install-WikeloCollector.ps1 -Mode Prices -PriceIntervalHours 6 -DryRun
 .\collector\Uninstall-WikeloCollector.ps1 -DryRun -RemoveLocalData
 ```
 
-Running the installer creates current-user limited tasks: recipe collection daily at 03:00 and at logon, with `StartWhenAvailable` for missed runs; price refresh repeats every six hours. The uninstaller removes tasks and preserves local data unless `-RemoveLocalData` is explicitly supplied. Do not run installation from an elevated shell unless that ownership is intended.
+Running the installer with its default `-Mode All` creates current-user limited tasks: recipe collection daily at 03:00 and at logon, with `StartWhenAvailable` for missed runs; price refresh repeats every six hours. To automate only UEX prices, run:
+
+```powershell
+.\collector\Install-WikeloCollector.ps1 -Mode Prices -PriceIntervalHours 6
+```
+
+The price task calls the configured signed refresh endpoint and waits for the server to finish, so the UEX token remains server-only. Re-running the command updates the existing task. The uninstaller removes tasks and preserves local data unless `-RemoveLocalData` is explicitly supplied. Do not run installation from an elevated shell unless that ownership is intended.
 
 ## Validate
 

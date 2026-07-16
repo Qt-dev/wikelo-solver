@@ -209,7 +209,7 @@ export default function RecipePlanner() {
       .filter((recipe) => {
         const haystack = [
           recipe.name,
-          recipe.output.name,
+          ...recipe.outputs.map((output) => output.name),
           recipe.category,
           ...recipe.components.map((component) => component.name),
         ]
@@ -406,7 +406,7 @@ export default function RecipePlanner() {
                   <article className={`recipe-row ${recipe.id === selectedRecipe?.id ? "chosen" : ""}`} key={recipe.id}>
                     <button type="button" className="recipe-select" onClick={() => setSelectedId(recipe.id)} aria-pressed={recipe.id === selectedRecipe?.id} aria-label={`View details for ${recipe.name}`}>
                       <span className={`recipe-glyph ${categoryTone(recipe.category)}`} aria-hidden="true">✦</span>
-                      <span className="recipe-name"><strong>{recipe.name}</strong><small>{recipe.output.quantity}× {recipe.output.name}</small></span>
+                      <span className="recipe-name"><strong>{recipe.name}</strong><small>{recipe.outputs.map((output) => `${output.quantity}× ${output.name}`).join(" · ")}</small></span>
                       <span className="recipe-meta"><b>{recipe.reputationNeeded}</b> needed<small>+{recipe.reputationGranted} granted</small></span>
                       <span className={`row-price ${summary.complete ? "" : "missing"}`}><b>{formatAuec(summary.valueAuec)}</b><small>{summary.complete ? "aUEC to source" : `aUEC + ${summary.missingItemIds.length} missing`}</small></span>
                       <span className={`readiness-dot ${summary.ready ? "ready" : "limited"}`}><i aria-hidden="true" />{summary.readiness}%</span>
@@ -421,8 +421,8 @@ export default function RecipePlanner() {
         <aside className="detail-panel" id="recipe-details" aria-live="polite">
           {selectedRecipe && selectedSummary ? (
             <>
-              <div className="detail-title"><p className="eyebrow">Selected commission</p><span className={`category-chip ${categoryTone(selectedRecipe.category)}`}>{selectedRecipe.category}</span><h2>{selectedRecipe.name}</h2><p>Produces {selectedRecipe.output.quantity}× {selectedRecipe.output.name}</p></div>
-              <div className="rep-summary"><div><span>Reputation granted</span><strong>+{selectedRecipe.reputationGranted}</strong><small>on completion</small></div><div><span>Reputation needed</span><strong>{selectedRecipe.reputationNeeded}</strong><small>mission requirement</small></div></div>
+              <div className="detail-title"><p className="eyebrow">Selected commission</p><span className={`category-chip ${categoryTone(selectedRecipe.category)}`}>{selectedRecipe.category}</span><h2>{selectedRecipe.name}</h2><p>Produces {selectedRecipe.outputs.map((output) => `${output.quantity}× ${output.name}`).join(" · ")}</p></div>
+              <div className="rep-summary"><div><span>Reputation granted</span><strong>+{selectedRecipe.reputationGranted}</strong><small>Wikelo Emporium · on completion</small></div><div><span>Reputation needed</span><strong>{selectedRecipe.reputationNeeded}</strong><small>{selectedRecipe.reputationNeededLabel ? `Wikelo Emporium · ${selectedRecipe.reputationNeededLabel}` : "Wikelo Emporium · mission requirement"}</small></div></div>
               <div className="component-heading"><h3>Components</h3><span>{selectedSummary.accounted}/{selectedRecipe.components.length} set</span></div>
               <div className="component-list">
                 {selectedRecipe.components.map((component) => {

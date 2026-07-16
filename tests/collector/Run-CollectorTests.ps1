@@ -50,6 +50,11 @@ Assert-Equal '00000000-0000-0000-0000-000000000001' $headers['X-Wikelo-Request-I
 Assert-Equal '57c73e829df266125116f742a48e75675adc0d731b0488c82fa9ea31e2d7b1c5' $headers['X-Wikelo-Signature'] 'HMAC mismatch.'
 Assert-Throws { Invoke-WikeloSignedPost -Uri 'http://example.com/import' -Body '{}' -Secret 'test' -DryRun } 'Non-loopback plaintext HTTP should be rejected.'
 
+$priceTaskPreview = @(& (Join-Path $repo 'collector\Install-WikeloCollector.ps1') -Mode Prices -PriceIntervalHours 4 -DryRun)
+Assert-Equal 1 $priceTaskPreview.Count 'Price-only task preview should contain one task.'
+Assert-Equal 'WikeloSolver-Prices' $priceTaskPreview[0].Name 'Price-only task preview selected the wrong task.'
+Assert-Equal 'Every 4 hours; StartWhenAvailable' $priceTaskPreview[0].Schedule 'Price task preview interval mismatch.'
+
 $archiveTime = [datetime]'2026-02-03T04:05:06Z'
 $state = [pscustomobject]@{ archiveHash = $hash; archiveLength = 123; archiveLastWriteUtc = $archiveTime.ToString('o') }
 Assert-True (Test-WikeloArchiveUnchanged -State $state -ArchiveHash $hash -ArchiveLength 123 -ArchiveLastWriteUtc $archiveTime) 'Matching archive hash and metadata should skip.'

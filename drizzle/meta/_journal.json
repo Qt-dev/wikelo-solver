@@ -15,6 +15,20 @@
       "when": 1784166395044,
       "tag": "0001_flimsy_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784184213716,
+      "tag": "0003_amazing_toad_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784233108856,
+      "tag": "0003_rainy_sugar_man",
+      "breakpoints": true
     }
   ]
 }
