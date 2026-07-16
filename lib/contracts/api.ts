@@ -54,6 +54,15 @@ export type RecipeTodoDto = {
   updatedAt?: string;
 };
 
+export type RecipeOutputDto = {
+  itemId: string | null;
+  name: string;
+  quantity: number;
+  kind: "item" | "blueprint";
+  grantTiming: "mission_start" | "mission_completion" | "other";
+  externalUrl: string | null;
+};
+
 export type RecipeTodosResponse = {
   todos: RecipeTodoDto[];
 };
@@ -62,8 +71,8 @@ export type RecipeDto = {
   id: string;
   name: string;
   category: string;
-  output: { itemId: string | null; name: string; quantity: number };
-  outputs: Array<{ itemId: string | null; name: string; quantity: number }>;
+  output: RecipeOutputDto;
+  outputs: RecipeOutputDto[];
   reputationNeeded: number;
   reputationGranted: number;
   components: RecipeComponentDto[];
@@ -89,8 +98,8 @@ export type NormalizedImportV1 = {
     gameRecipeId: string;
     name: string;
     category: string;
-    output: { gameItemId: string | null; name: string; quantity: number };
-    outputs?: Array<{ gameItemId: string | null; name: string; quantity: number }>;
+    output: { gameItemId: string | null; name: string; quantity: number; kind?: "item" | "blueprint"; grantTiming?: "mission_start" | "mission_completion" | "other"; externalUrl?: string | null };
+    outputs?: Array<{ gameItemId: string | null; name: string; quantity: number; kind?: "item" | "blueprint"; grantTiming?: "mission_start" | "mission_completion" | "other"; externalUrl?: string | null }>;
     reputationNeeded: number;
     reputationGranted: number;
     components: Array<{ gameItemId: string; name: string; category: string; quantity: number }>;

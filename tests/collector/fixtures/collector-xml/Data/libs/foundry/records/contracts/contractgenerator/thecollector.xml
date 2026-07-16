@@ -8,7 +8,9 @@
         <contractResults>
           <ContractResult_Item entityClass="@reward_box" amount="1" />
           <ContractResult_Item entityClass="@reward_token" amount="20" />
-          <BlueprintRewards blueprintPool="@blueprint_reward" />
+          <BlueprintRewards blueprintPool="@blueprint_reward">
+            <missionResults><Bool value="0" /><Bool value="1" /><Bool value="0" /></missionResults>
+          </BlueprintRewards>
           <ContractResult_Item entityClass="@crafted_reward" amount="1" />
         </contractResults>
       </Contract>

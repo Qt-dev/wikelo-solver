@@ -36,6 +36,13 @@
       "when": 1784225529353,
       "tag": "0004_sparkling_green_goblin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784232544301,
+      "tag": "0005_bright_terror",
+      "breakpoints": true
     }
   ]
 }

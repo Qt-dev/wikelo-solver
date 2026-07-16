@@ -37,6 +37,9 @@ export async function GET(request: Request) {
       itemId: recipeOutputs.itemId,
       outputName: recipeOutputs.outputName,
       quantity: recipeOutputs.quantity,
+      outputKind: recipeOutputs.outputKind,
+      grantTiming: recipeOutputs.grantTiming,
+      externalUrl: recipeOutputs.externalUrl,
     }).from(recipeOutputs)
       .innerJoin(recipes, eq(recipes.id, recipeOutputs.recipeId))
       .where(eq(recipes.patchId, patch.id))
@@ -84,8 +87,11 @@ export async function GET(request: Request) {
         itemId: output.itemId,
         name: output.outputName,
         quantity: output.quantity,
+        kind: output.outputKind,
+        grantTiming: output.grantTiming,
+        externalUrl: output.externalUrl,
       }));
-      if (outputs.length === 0) outputs.push({ itemId: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity });
+      if (outputs.length === 0) outputs.push({ itemId: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity, kind: "item", grantTiming: "mission_completion", externalUrl: null });
       const components: RecipeComponentDto[] = activeComponents
         .filter((component) => component.recipeId === recipe.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)

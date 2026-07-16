@@ -60,14 +60,23 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
     const outputs = recipe.outputs?.length ? recipe.outputs : [recipe.output];
     const outputIds = new Set<string>();
     for (const [outputIndex, output] of outputs.entries()) {
+      const validKind = output?.kind === undefined || output.kind === "item" || output.kind === "blueprint";
+      const validTiming = output?.grantTiming === undefined || output.grantTiming === "mission_start" || output.grantTiming === "mission_completion" || output.grantTiming === "other";
+      const validExternalUrl = output?.externalUrl === undefined || output.externalUrl === null || /^https:\/\/scmdb\.net\/\?page=fab&fab=[A-Za-z0-9_%.-]+$/.test(output.externalUrl);
       if (
         !output ||
         (output.gameItemId !== null && (!nonEmpty(output.gameItemId) || outputIds.has(output.gameItemId))) ||
         !nonEmpty(output.name) ||
-        !positiveInteger(output.quantity)
+        !positiveInteger(output.quantity) ||
+        !validKind ||
+        !validTiming ||
+        !validExternalUrl
       ) {
         throw new HttpError(400, `Recipe ${recipeIndex} output ${outputIndex} is invalid or duplicated.`, "invalid_import");
       }
+      output.kind ??= "item";
+      output.grantTiming ??= "mission_completion";
+      output.externalUrl ??= null;
       if (output.gameItemId) outputIds.add(output.gameItemId);
     }
     recipe.outputs = outputs;

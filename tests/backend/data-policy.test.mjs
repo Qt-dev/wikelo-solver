@@ -32,6 +32,18 @@ test("normalized imports retain every produced item", () => {
   assert.equal(parsed.recipes[0].outputs[1].name, "Wikelo Favor");
 });
 
+test("normalized imports retain mission-start blueprint metadata", () => {
+  const blueprint = { gameItemId: "bp-1", name: "Metamaterial Blueprint", quantity: 1, kind: "blueprint", grantTiming: "mission_start", externalUrl: "https://scmdb.net/?page=fab&fab=BP_CRAFT_Carryable_2H_CY_CollectorMaterial_001" };
+  const payload = {
+    schema: "wikelo-normalized-v1",
+    patch: { version: "4.2", build: "123", channel: "LIVE", sourceHash: "d".repeat(64), extractedAt: "2026-07-15T00:00:00Z" },
+    recipes: [{ gameRecipeId: "r4", name: "Metamaterial Test", category: "resource", output: blueprint, outputs: [blueprint], reputationNeeded: 0, reputationGranted: 0, components: [{ gameItemId: "i4", name: "Material", category: "resource", quantity: 1 }] }],
+  };
+  const parsed = normalized.parseNormalizedImport(payload);
+  assert.equal(parsed.recipes[0].outputs[0].grantTiming, "mission_start");
+  assert.match(parsed.recipes[0].outputs[0].externalUrl, /BP_CRAFT_Carryable_2H_CY_CollectorMaterial_001$/);
+});
+
 test("UEX mapping permits exact ID, exact UUID, reviewed alias, and unique normalized name only", () => {
   const uexItems = [{ idItem: 10, uuid: UUID_A, name: "Golden Medmon" }, { idItem: 11, uuid: UUID_B, name: "Copper" }];
   assert.equal(uex.resolveUexMapping({ itemId: "0", gameItemId: "game-id", name: "wrong", existingUexItemId: 11 }, uexItems).matchMethod, "exact_id");

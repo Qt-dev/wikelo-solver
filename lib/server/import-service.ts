@@ -116,6 +116,9 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
           itemId: output.gameItemId ? itemIds.get(output.gameItemId) ?? null : null,
           outputName: output.name,
           quantity: output.quantity,
+          outputKind: output.kind ?? "item",
+          grantTiming: output.grantTiming ?? "mission_completion",
+          externalUrl: output.externalUrl ?? null,
         });
       }
       for (const [sortOrder, component] of recipe.components.entries()) {

@@ -1,1 +1,5 @@
-<BlueprintReward __ref="@blueprint_reward" />
+<BlueprintPoolRecord __ref="@blueprint_reward">
+  <blueprintRewards>
+    <BlueprintReward blueprintRecord="@crafting_blueprint" />
+  </blueprintRewards>
+</BlueprintPoolRecord>

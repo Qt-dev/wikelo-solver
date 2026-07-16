@@ -115,11 +115,16 @@ export const recipeOutputs = sqliteTable(
     itemId: text("item_id").references(() => items.id, { onDelete: "set null" }),
     outputName: text("output_name").notNull(),
     quantity: integer("quantity").notNull(),
+    outputKind: text("output_kind", { enum: ["item", "blueprint"] }).notNull().default("item"),
+    grantTiming: text("grant_timing", { enum: ["mission_start", "mission_completion", "other"] }).notNull().default("mission_completion"),
+    externalUrl: text("external_url"),
   },
   (table) => [
     primaryKey({ columns: [table.recipeId, table.sortOrder] }),
     index("recipe_outputs_item_id_idx").on(table.itemId),
     check("recipe_outputs_quantity_check", sql`${table.quantity} > 0`),
+    check("recipe_outputs_kind_check", sql`${table.outputKind} in ('item', 'blueprint')`),
+    check("recipe_outputs_grant_timing_check", sql`${table.grantTiming} in ('mission_start', 'mission_completion', 'other')`),
   ],
 );
 

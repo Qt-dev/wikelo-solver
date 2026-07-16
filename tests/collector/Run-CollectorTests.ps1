@@ -41,7 +41,10 @@ Assert-Equal 'Reward Box' $collectorNormalized.recipes[0].output.name 'Reward re
 Assert-Equal 4 @($collectorNormalized.recipes[0].outputs).Count 'All reward items should be collected.'
 Assert-Equal 'Reward Token' $collectorNormalized.recipes[0].outputs[1].name 'Second reward name resolution failed.'
 Assert-Equal 20 $collectorNormalized.recipes[0].outputs[1].quantity 'Second reward quantity mismatch.'
-Assert-Equal 'Vgl Flightsuit Helmet 01 Blueprint' $collectorNormalized.recipes[0].outputs[2].name 'Blueprint filename fallback failed.'
+Assert-Equal 'Cds Superheavy Helmet 01 Blueprint' $collectorNormalized.recipes[0].outputs[2].name 'Blueprint filename fallback failed.'
+Assert-Equal 'blueprint' $collectorNormalized.recipes[0].outputs[2].kind 'Blueprint reward kind mismatch.'
+Assert-Equal 'mission_start' $collectorNormalized.recipes[0].outputs[2].grantTiming 'Blueprint grant timing mismatch.'
+Assert-Equal 'https://scmdb.net/?page=fab&fab=BP_CRAFT_Cds_Superheavy_Helmet_01' $collectorNormalized.recipes[0].outputs[2].externalUrl 'SCMDB blueprint URL mismatch.'
 Assert-Equal 'Cds Superheavy Helmet 01' $collectorNormalized.recipes[0].outputs[3].name 'Crafted entity filename fallback failed.'
 $invalid = $normalized | ConvertTo-Json -Depth 12 | ConvertFrom-Json
 $invalid.patch.sourceHash = 'not-a-hash'

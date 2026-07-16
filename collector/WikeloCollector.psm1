@@ -365,8 +365,8 @@ function ConvertTo-WikeloRecipe {
         gameRecipeId = $id
         name = $name
         category = $category
-        output = [ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity }
-        outputs = @([ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity })
+        output = [ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity; kind = 'item'; grantTiming = 'mission_completion'; externalUrl = $null }
+        outputs = @([ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity; kind = 'item'; grantTiming = 'mission_completion'; externalUrl = $null })
         reputationNeeded = ConvertTo-WikeloNumber (Get-WikeloProperty $Candidate @('reputationNeeded', 'requiredReputation', 'reputationRequirement')) 0
         reputationGranted = ConvertTo-WikeloNumber (Get-WikeloProperty $Candidate @('reputationGranted', 'grantedReputation', 'reputationReward')) 0
         components = $components
@@ -476,25 +476,79 @@ function ConvertTo-WikeloFileDisplayName {
     $name
 }
 
-function Get-WikeloRewardEntries {
+function Get-WikeloRewardGrantTiming {
     param([System.Xml.XmlElement]$Node)
+    $results = @($Node.SelectNodes("./*[local-name()='missionResults']/*[local-name()='Bool']"))
+    if ($results.Count -gt 1 -and $results[1].GetAttribute('value') -eq '1') { return 'mission_start' }
+    if ($results.Count -gt 0 -and $results[0].GetAttribute('value') -eq '1') { return 'mission_completion' }
+    'other'
+}
+
+function Get-WikeloBlueprintEntries {
+    param(
+        [string]$PoolReference,
+        [hashtable]$ReferenceNames,
+        [hashtable]$ReferencePaths,
+        [hashtable]$Localization,
+        [string]$GrantTiming
+    )
     $entries = [Collections.Generic.List[object]]::new()
+    $poolPath = if ($ReferencePaths.ContainsKey($PoolReference)) { $ReferencePaths[$PoolReference] } elseif ($PoolReference.StartsWith('@') -and $ReferencePaths.ContainsKey($PoolReference.Substring(1))) { $ReferencePaths[$PoolReference.Substring(1)] } else { $null }
+    if ($poolPath) {
+        try {
+            [xml]$poolDocument = Get-Content -LiteralPath $poolPath -Raw
+            foreach ($blueprintReward in @($poolDocument.SelectNodes("//*[local-name()='BlueprintReward' and @blueprintRecord]"))) {
+                $blueprintReference = $blueprintReward.GetAttribute('blueprintRecord')
+                if (-not $blueprintReference) { continue }
+                $blueprintName = Resolve-WikeloReferenceName $blueprintReference $ReferenceNames $Localization
+                $blueprintPath = if ($ReferencePaths.ContainsKey($blueprintReference)) { $ReferencePaths[$blueprintReference] } elseif ($blueprintReference.StartsWith('@') -and $ReferencePaths.ContainsKey($blueprintReference.Substring(1))) { $ReferencePaths[$blueprintReference.Substring(1)] } else { $null }
+                $scmdbUrl = $null
+                if ($blueprintPath) {
+                    try {
+                        [xml]$blueprintDocument = Get-Content -LiteralPath $blueprintPath -Raw
+                        $rootName = $blueprintDocument.DocumentElement.LocalName
+                        if ($rootName -match '(?i)(?:^|\.)(BP_CRAFT_[A-Za-z0-9_]+)$') {
+                            $fabId = $Matches[1]
+                            $scmdbUrl = "https://scmdb.net/?page=fab&fab=$([uri]::EscapeDataString($fabId))"
+                        }
+                        $creationNode = $blueprintDocument.SelectSingleNode("//*[local-name()='CraftingProcess_Creation' and @entityClass]")
+                        if ($creationNode) {
+                            $createdReference = $creationNode.GetAttribute('entityClass')
+                            $createdName = Resolve-WikeloReferenceName $createdReference $ReferenceNames $Localization
+                            if ($createdName -and $createdName -ne $createdReference -and $createdName -notmatch '^[0-9a-f]{8}-[0-9a-f-]{27,}$') { $blueprintName = "$createdName Blueprint" }
+                        }
+                    } catch { Write-Verbose "Unable to parse blueprint '$blueprintReference' from '$blueprintPath': $($_.Exception.Message)" }
+                }
+                $entries.Add([ordered]@{ gameItemId = $blueprintReference; name = $blueprintName; quantity = 1; kind = 'blueprint'; grantTiming = $GrantTiming; externalUrl = $scmdbUrl })
+            }
+        } catch { Write-Verbose "Unable to parse blueprint pool '$PoolReference' from '$poolPath': $($_.Exception.Message)" }
+    }
+    if ($entries.Count -eq 0) {
+        $entries.Add([ordered]@{ gameItemId = $PoolReference; name = (Resolve-WikeloReferenceName $PoolReference $ReferenceNames $Localization); quantity = 1; kind = 'blueprint'; grantTiming = $GrantTiming; externalUrl = $null })
+    }
+    @($entries)
+}
+
+function Get-WikeloRewardEntries {
+    param([System.Xml.XmlElement]$Node, [hashtable]$ReferenceNames, [hashtable]$ReferencePaths, [hashtable]$Localization)
+    $entries = [Collections.Generic.List[object]]::new()
+    $grantTiming = Get-WikeloRewardGrantTiming $Node
     if ($Node.LocalName -eq 'ContractResult_ItemsWeighting') {
         foreach ($award in @($Node.SelectNodes(".//*[local-name()='ItemAwardEntityClass']"))) {
             $reference = Get-WikeloXmlReferenceValue $award
             if ($reference) {
                 $quantity = ConvertTo-WikeloNumber (Get-WikeloXmlValue $award @('amountToAward','amount','quantity')) 1
-                $entries.Add([ordered]@{ gameItemId = $reference; quantity = [math]::Max(1, [math]::Ceiling($quantity)) })
+                $entries.Add([ordered]@{ gameItemId = $reference; quantity = [math]::Max(1, [math]::Ceiling($quantity)); kind = 'item'; grantTiming = $grantTiming; externalUrl = $null })
             }
         }
     } elseif ($Node.LocalName -eq 'BlueprintRewards') {
         $reference = [string](Get-WikeloXmlValue $Node @('blueprintPool'))
-        if ($reference) { $entries.Add([ordered]@{ gameItemId = $reference; quantity = 1 }) }
+        if ($reference) { foreach ($entry in @(Get-WikeloBlueprintEntries $reference $ReferenceNames $ReferencePaths $Localization $grantTiming)) { $entries.Add($entry) } }
     } else {
         $reference = Get-WikeloXmlReferenceValue $Node
         if ($reference) {
             $quantity = ConvertTo-WikeloNumber (Get-WikeloXmlValue $Node @('amount','amountToAward','quantity')) 1
-            $entries.Add([ordered]@{ gameItemId = $reference; quantity = [math]::Max(1, [math]::Ceiling($quantity)) })
+            $entries.Add([ordered]@{ gameItemId = $reference; quantity = [math]::Max(1, [math]::Ceiling($quantity)); kind = 'item'; grantTiming = $grantTiming; externalUrl = $null })
         }
     }
     @($entries)
@@ -665,13 +719,14 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         if ($rewardNodes.Count -eq 0 -or $requirements.Count -eq 0) { Write-Verbose "Skipping incomplete contract '$($contract.GetAttribute('id'))'."; continue }
         $outputById = [ordered]@{}
         foreach ($rewardNode in $rewardNodes) {
-            foreach ($entry in @(Get-WikeloRewardEntries $rewardNode)) {
+            foreach ($entry in @(Get-WikeloRewardEntries $rewardNode $referenceNames $referencePaths $localization)) {
                 $entryId = [string]$entry.gameItemId
-                $entryName = Resolve-WikeloReferenceName $entryId $referenceNames $localization
+                $entryNameValue = if ($entry.Contains('name')) { $entry['name'] } else { $null }
+                $entryName = if ($entryNameValue) { [string]$entryNameValue } else { Resolve-WikeloReferenceName $entryId $referenceNames $localization }
                 if ([string]::IsNullOrWhiteSpace($entryId) -or [string]::IsNullOrWhiteSpace([string]$entryName)) { continue }
                 $entryQuantity = [int]$entry.quantity
                 if (-not $outputById.Contains($entryId) -or [int]$outputById[$entryId].quantity -lt $entryQuantity) {
-                    $outputById[$entryId] = [ordered]@{ gameItemId = $entryId; name = $entryName; quantity = $entryQuantity }
+                    $outputById[$entryId] = [ordered]@{ gameItemId = $entryId; name = $entryName; quantity = $entryQuantity; kind = [string]$entry.kind; grantTiming = [string]$entry.grantTiming; externalUrl = $entry.externalUrl }
                 }
             }
         }
@@ -780,6 +835,9 @@ function Assert-WikeloNormalizedV1 {
         $outputs = if ($null -ne $recipe.outputs -and @($recipe.outputs).Count -gt 0) { @($recipe.outputs) } else { @($recipe.output) }
         foreach ($output in $outputs) {
             if ([string]::IsNullOrWhiteSpace([string]$output.name) -or [double]$output.quantity -le 0) { $errors.Add("recipe '$($recipe.gameRecipeId)' has an invalid output entry") }
+            if ([string]$output.kind -notin @('item', 'blueprint')) { $errors.Add("recipe '$($recipe.gameRecipeId)' has an invalid output kind") }
+            if ([string]$output.grantTiming -notin @('mission_start', 'mission_completion', 'other')) { $errors.Add("recipe '$($recipe.gameRecipeId)' has an invalid output grant timing") }
+            if ($output.externalUrl -and [string]$output.externalUrl -notmatch '^https://scmdb\.net/\?page=fab&fab=[A-Za-z0-9_%.-]+$') { $errors.Add("recipe '$($recipe.gameRecipeId)' has an invalid output URL") }
         }
         if ([double]$recipe.reputationNeeded -lt 0 -or [double]$recipe.reputationGranted -lt 0) { $errors.Add("recipe '$($recipe.gameRecipeId)' has negative reputation") }
         if (@($recipe.components).Count -eq 0) { $errors.Add("recipe '$($recipe.gameRecipeId)' has no components") }
