@@ -368,6 +368,7 @@ function ConvertTo-WikeloRecipe {
         output = [ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity; kind = 'item'; grantTiming = 'mission_completion'; externalUrl = $null }
         outputs = @([ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity; kind = 'item'; grantTiming = 'mission_completion'; externalUrl = $null })
         reputationNeeded = ConvertTo-WikeloNumber (Get-WikeloProperty $Candidate @('reputationNeeded', 'requiredReputation', 'reputationRequirement')) 0
+        reputationNeededLabel = $null
         reputationGranted = ConvertTo-WikeloNumber (Get-WikeloProperty $Candidate @('reputationGranted', 'grantedReputation', 'reputationReward')) 0
         components = $components
     }
@@ -570,6 +571,26 @@ function Get-WikeloRewardReference {
     Get-WikeloXmlReference $Node $ReferenceNames $Localization
 }
 
+function Get-WikeloReferencedRoot {
+    param([string]$Reference, [hashtable]$ReferencePaths, [hashtable]$DocumentCache)
+    if (-not $Reference) { return $null }
+    $key = if ($ReferencePaths.ContainsKey($Reference)) { $Reference } elseif ($Reference.StartsWith('@') -and $ReferencePaths.ContainsKey($Reference.Substring(1))) { $Reference.Substring(1) } else { return $null }
+    if (-not $DocumentCache.ContainsKey($key)) {
+        try {
+            [xml]$document = Get-Content -LiteralPath $ReferencePaths[$key] -Raw
+            $DocumentCache[$key] = $document
+        } catch { return $null }
+    }
+    $DocumentCache[$key].SelectSingleNode("//*[@__ref='$Reference' or @__ref='@$Reference']")
+}
+
+function Get-WikeloReferencedNumber {
+    param([string]$Reference, [string[]]$Names, [hashtable]$ReferencePaths, [hashtable]$DocumentCache)
+    $node = Get-WikeloReferencedRoot $Reference $ReferencePaths $DocumentCache
+    if (-not $node) { return 0 }
+    ConvertTo-WikeloNumber (Get-WikeloXmlValue $node $Names) 0
+}
+
 function Get-WikeloXmlRootMetadata {
     [CmdletBinding()]
     param([Parameter(Mandatory)][IO.FileInfo]$File)
@@ -672,6 +693,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
     $contracts = @($collector.SelectNodes("//*[local-name()='Contract']"))
     Write-WikeloCollectorDiagnostic "TheCollector scan: found $($contracts.Count) Contract nodes."
     $recipes = [Collections.Generic.List[object]]::new()
+    $referenceDocuments = @{}
     foreach ($contract in $contracts) {
         $template = $null
         $templateRef = [string](Get-WikeloXmlValue $contract @('template'))
@@ -744,11 +766,28 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         if (-not $name) { $name = $output }
         $id = [string](Get-WikeloXmlValue $contract @('id','debugName'))
         if (-not $id) { $id = Get-WikeloStableId "$name|$output" 'recipe' }
+        $reputationNeeded = 0
+        $reputationNeededLabel = $null
+        $reputationGranted = 0
+        foreach ($source in $sourceNodes) {
+            foreach ($prerequisite in @($source.SelectNodes(".//*[local-name()='ContractPrerequisite_Reputation']"))) {
+                $standingRef = [string](Get-WikeloXmlValue $prerequisite @('minStanding'))
+                $standing = Get-WikeloReferencedRoot $standingRef $referencePaths $referenceDocuments
+                if ($standing) {
+                    $reputationNeeded = [math]::Max($reputationNeeded, (Get-WikeloReferencedNumber $standingRef @('minReputation') $referencePaths $referenceDocuments))
+                    $reputationNeededLabel = Resolve-WikeloLocalizedName ([string](Get-WikeloXmlValue $standing @('displayName','name'))) $localization
+                }
+            }
+            foreach ($reward in @($source.SelectNodes(".//*[local-name()='contractResultReputationAmounts']"))) {
+                $rewardRef = [string](Get-WikeloXmlValue $reward @('reward'))
+                $reputationGranted += Get-WikeloReferencedNumber $rewardRef @('reputationAmount') $referencePaths $referenceDocuments
+            }
+        }
         $recipes.Add([ordered]@{
             gameRecipeId = $id; name = $name; category = 'thecollector'
             output = $outputs[0]
             outputs = $outputs
-            reputationNeeded = 0; reputationGranted = 0; components = @($requirements)
+            reputationNeeded = $reputationNeeded; reputationNeededLabel = $reputationNeededLabel; reputationGranted = $reputationGranted; components = @($requirements)
         })
     }
     if ($recipes.Count -eq 0) { throw 'No complete Wikelo contracts with HaulingOverride inputs and contractResults rewards were found.' }

@@ -75,12 +75,20 @@ See `collector/README.md`. The collector is designed to:
 
 The installer creates scheduled tasks only when you explicitly run it. Building or testing this repository does not modify Task Scheduler.
 
+To keep UEX prices current without also scheduling recipe extraction, install only the signed price refresh task:
+
+```powershell
+.\collector\Install-WikeloCollector.ps1 -Mode Prices -PriceIntervalHours 6
+```
+
+This task runs under the current Windows user, starts missed runs when the user is next available, and uses the DPAPI-protected collector secret. See `collector/README.md` for preview and uninstall commands.
+
 ## Data semantics
 
 - The active patch changes only after a complete validated import succeeds; failed imports leave the previous active patch visible.
 - UEX `id_item` is the canonical marketplace identity; game UUIDs are optional secondary identifiers. Only an existing exact UEX item ID, exact game UUID, reviewed alias, or unique exact normalized-name mapping is accepted automatically.
 - Matched recipe components expose their official UEX marketplace link, including Wikelo Favor at `id_item=4385`.
-- Price selection prefers the lowest current terminal buy quote and falls back to the current quality-tier-zero marketplace buy average.
+- Price selection compares current terminal offers with active per-unit UEX seller listings. A marketplace low below half of the next-lowest listing is treated as an outlier unless another listing corroborates it.
 - Owned and farmable inputs contribute zero to the shopping cost.
 - A missing price for a needed component marks the total incomplete. It is never silently treated as a zero-priced purchase.
 - The active patch and two preceding patches are retained for rollback and comparison.

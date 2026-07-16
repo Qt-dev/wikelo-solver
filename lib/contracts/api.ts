@@ -74,6 +74,7 @@ export type RecipeDto = {
   output: RecipeOutputDto;
   outputs: RecipeOutputDto[];
   reputationNeeded: number;
+  reputationNeededLabel: string | null;
   reputationGranted: number;
   components: RecipeComponentDto[];
   total: { valueAuec: number; complete: boolean; missingItemIds: string[] };
@@ -101,6 +102,7 @@ export type NormalizedImportV1 = {
     output: { gameItemId: string | null; name: string; quantity: number; kind?: "item" | "blueprint"; grantTiming?: "mission_start" | "mission_completion" | "other"; externalUrl?: string | null };
     outputs?: Array<{ gameItemId: string | null; name: string; quantity: number; kind?: "item" | "blueprint"; grantTiming?: "mission_start" | "mission_completion" | "other"; externalUrl?: string | null }>;
     reputationNeeded: number;
+    reputationNeededLabel?: string | null;
     reputationGranted: number;
     components: Array<{ gameItemId: string; name: string; category: string; quantity: number }>;
   }>;

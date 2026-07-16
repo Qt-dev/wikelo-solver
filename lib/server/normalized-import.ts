@@ -51,6 +51,7 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
       !nonEmpty(recipe.output.name) ||
       !positiveInteger(recipe.output.quantity) ||
       !nonNegativeInteger(recipe.reputationNeeded) ||
+      (recipe.reputationNeededLabel !== undefined && recipe.reputationNeededLabel !== null && !nonEmpty(recipe.reputationNeededLabel)) ||
       !nonNegativeInteger(recipe.reputationGranted) ||
       !Array.isArray(recipe.components) ||
       recipe.components.length === 0
@@ -81,6 +82,7 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
     }
     recipe.outputs = outputs;
     recipe.output = outputs[0];
+    recipe.reputationNeededLabel ??= null;
     recipeIds.add(recipe.gameRecipeId);
     if (recipe.category.toLocaleLowerCase("en-US") === "entityclass") recipe.category = "resource";
     const componentIds = new Set<string>();

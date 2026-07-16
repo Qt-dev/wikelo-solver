@@ -109,7 +109,17 @@ try {
         exit 0
     }
     $cachePreview = if ($RebuildCache) { [pscustomobject]@{ Valid = $false; Reason = 'rebuild requested' } } else { Get-WikeloCacheValidation -CacheRoot $cacheRoot -ArchivePath $archive -ArchiveLength $archiveInfo.Length -ArchiveLastWriteUtc $archiveInfo.LastWriteTimeUtc }
-    $archiveHash = if ($cachePreview.Valid -and $cachePreview.Manifest.archiveHash) { [string]$cachePreview.Manifest.archiveHash } else { (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() }
+    $archiveHash = if ($cachePreview.Valid -and $cachePreview.Manifest.archiveHash) {
+        [string]$cachePreview.Manifest.archiveHash
+    } else {
+        Write-CollectorLog "Archive hash start: path=$archive, bytes=$($archiveInfo.Length), algorithm=SHA256"
+        $hashTimer = [Diagnostics.Stopwatch]::StartNew()
+        try { (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() }
+        finally {
+            $hashTimer.Stop()
+            Write-CollectorLog "Archive hash complete: elapsedMinutes=$([math]::Round($hashTimer.Elapsed.TotalMinutes, 1))"
+        }
+    }
     if ($DryRun) {
         Write-Output ([pscustomobject]@{ DryRun = $true; Mode = 'Recipes'; Unp4kPath = $unp4k; ArchivePath = $archive; ArchiveHash = $archiveHash; CacheRoot = $cacheRoot; CacheValid = $cachePreview.Valid; CacheReason = $cachePreview.Reason; WouldExtract = -not $cachePreview.Valid; WouldUpload = $true })
         exit 0

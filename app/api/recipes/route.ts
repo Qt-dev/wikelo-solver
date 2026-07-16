@@ -140,6 +140,7 @@ export async function GET(request: Request) {
         output: outputs[0],
         outputs,
         reputationNeeded: recipe.reputationNeeded,
+        reputationNeededLabel: recipe.reputationNeededLabel,
         reputationGranted: recipe.reputationGranted,
         components,
         total: calculateRecipeTotal(components),

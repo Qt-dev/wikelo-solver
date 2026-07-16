@@ -107,6 +107,7 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
         outputName: primaryOutput.name,
         outputQuantity: primaryOutput.quantity,
         reputationNeeded: recipe.reputationNeeded,
+        reputationNeededLabel: recipe.reputationNeededLabel ?? null,
         reputationGranted: recipe.reputationGranted,
       });
       for (const [sortOrder, output] of outputs.entries()) {
