@@ -1,15 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ComponentAllocation, RecipeDto, RecipesResponse, SessionResponse } from "../../lib/contracts/api";
+import type { ComponentAllocation, RecipeDto, RecipesResponse, RecipeTodosResponse, SessionResponse } from "../../lib/contracts/api";
 
 type SortKey = "price" | "granted" | "needed" | "name";
 type ReadinessFilter = "all" | "ready" | "needed";
 type ViewMode = "table" | "cards";
 type AllocationMap = Record<string, ComponentAllocation>;
+type TodoMap = Record<string, number>;
+type AggregateMaterial = RecipeDto["components"][number] & { required: number; owned: number; farmable: number; needed: number; costAuec: number };
 
 const LOCAL_ALLOCATIONS_KEY = "wikelo-solver:allocations:v2";
 const VIEW_MODE_KEY = "wikelo-solver:recipe-view";
+const LOCAL_TODOS_KEY = "wikelo-solver:todos:v1";
+const SEARCH_VISIBLE_KEY = "wikelo-solver:search-visible";
 const RECIPE_STALE_MS = 36 * 60 * 60 * 1000;
 const PRICE_STALE_MS = 12 * 60 * 60 * 1000;
 
@@ -55,6 +59,21 @@ function parseAllocations(payload: unknown): AllocationMap {
 function readLocalAllocations() {
   try { return parseAllocations(JSON.parse(window.localStorage.getItem(LOCAL_ALLOCATIONS_KEY) ?? "{}")); } catch { return {}; }
 }
+function parseTodos(payload: unknown): TodoMap {
+  const result: TodoMap = {};
+  const source = payload && typeof payload === "object" && "todos" in payload ? (payload as { todos: unknown }).todos : payload;
+  if (!Array.isArray(source)) return result;
+  for (const entry of source) {
+    if (!entry || typeof entry !== "object") continue;
+    const recipeId = (entry as { recipeId?: unknown }).recipeId;
+    const quantity = Number((entry as { quantity?: unknown }).quantity);
+    if (typeof recipeId === "string" && Number.isInteger(quantity) && quantity >= 1 && quantity <= 99) result[recipeId] = quantity;
+  }
+  return result;
+}
+function readLocalTodos() {
+  try { return parseTodos(JSON.parse(window.localStorage.getItem(LOCAL_TODOS_KEY) ?? "[]")); } catch { return {}; }
+}
 function defaultAllocations(recipes: RecipeDto[]) {
   const result: AllocationMap = {};
   for (const recipe of recipes) for (const component of recipe.components) result[component.itemId] = component.allocation;
@@ -74,6 +93,10 @@ export default function RecipePlanner() {
   const [readiness, setReadiness] = useState<ReadinessFilter>("all");
   const [sortBy, setSortBy] = useState<SortKey>("price");
   const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [searchVisible, setSearchVisible] = useState(true);
+  const [todos, setTodos] = useState<TodoMap>({});
+  const [todoOpen, setTodoOpen] = useState(false);
+  const [todoQuantity, setTodoQuantity] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [recipeFocused, setRecipeFocused] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -81,15 +104,17 @@ export default function RecipePlanner() {
   const [notice, setNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pendingItems, setPendingItems] = useState<Set<string>>(new Set());
+  const [pendingTodos, setPendingTodos] = useState<Set<string>>(new Set());
   const [loggingOut, setLoggingOut] = useState(false);
 
   const loadPlanner = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-    const [recipeResult, sessionResult, allocationResult] = await Promise.allSettled([
+    const [recipeResult, sessionResult, allocationResult, todoResult] = await Promise.allSettled([
       readJson<RecipesResponse>("/api/recipes", { cache: "no-store" }),
       readJson<SessionResponse>("/api/session", { cache: "no-store" }),
       readJson<unknown>("/api/preferences", { cache: "no-store" }),
+      readJson<RecipeTodosResponse>("/api/todos", { cache: "no-store" }),
     ]);
     if (recipeResult.status === "rejected") {
       setLoadError("Recipe data could not be loaded. Check the connection and try again.");
@@ -102,6 +127,7 @@ export default function RecipePlanner() {
     setData(nextData);
     setSession(nextSession);
     setAllocations({ ...defaultAllocations(nextData.recipes), ...(nextSession.user ? saved : readLocalAllocations()) });
+    setTodos(nextSession.user && todoResult.status === "fulfilled" ? parseTodos(todoResult.value) : readLocalTodos());
     const requestedRecipeId = new URL(window.location.href).searchParams.get("recipe");
     const requestedRecipe = requestedRecipeId && nextData.recipes.some((recipe) => recipe.id === requestedRecipeId)
       ? requestedRecipeId
@@ -114,7 +140,10 @@ export default function RecipePlanner() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      try { setViewMode(window.localStorage.getItem(VIEW_MODE_KEY) === "cards" ? "cards" : "table"); } catch { /* preference is optional */ }
+      try {
+        setViewMode(window.localStorage.getItem(VIEW_MODE_KEY) === "cards" ? "cards" : "table");
+        setSearchVisible(window.localStorage.getItem(SEARCH_VISIBLE_KEY) !== "false");
+      } catch { /* preferences are optional */ }
       void loadPlanner();
     }, 0);
     return () => window.clearTimeout(timer);
@@ -162,6 +191,42 @@ export default function RecipePlanner() {
   }, [readiness, recipes, search, sortBy, summaryFor]);
   const selectedRecipe = recipes.find((recipe) => recipe.id === selectedId) ?? recipes[0] ?? null;
   const selectedSummary = selectedRecipe ? summaryFor(selectedRecipe) : null;
+  const todoSummary = useMemo(() => {
+    const entries = recipes.flatMap((recipe) => todos[recipe.id] ? [{ recipe, quantity: todos[recipe.id] }] : []);
+    const materials = new Map<string, AggregateMaterial>();
+    let totalCompletions = 0;
+    let reputationGranted = 0;
+    let reputationNeeded = 0;
+    for (const { recipe, quantity } of entries) {
+      totalCompletions += quantity;
+      reputationGranted += recipe.reputationGranted * quantity;
+      reputationNeeded = Math.max(reputationNeeded, recipe.reputationNeeded);
+      for (const component of recipe.components) {
+        const required = component.quantity * quantity;
+        const current = materials.get(component.itemId);
+        materials.set(component.itemId, current ? { ...current, required: current.required + required } : { ...component, required, owned: 0, farmable: 0, needed: 0, costAuec: 0 });
+      }
+    }
+    let totalRequired = 0;
+    let accounted = 0;
+    let missingUnits = 0;
+    let valueAuec = 0;
+    let unpricedItems = 0;
+    const materialRows = [...materials.values()].map((material) => {
+      const allocation = allocationFor(material.itemId, material.allocation);
+      const owned = Math.min(material.required, allocation.ownedQuantity);
+      const farmable = Math.min(material.required - owned, allocation.farmableQuantity);
+      const needed = material.required - owned - farmable;
+      const costAuec = (material.unitPriceAuec ?? 0) * needed;
+      totalRequired += material.required;
+      accounted += owned + farmable;
+      missingUnits += needed;
+      valueAuec += costAuec;
+      if (needed > 0 && material.unitPriceAuec === null) unpricedItems += 1;
+      return { ...material, owned, farmable, needed, costAuec };
+    }).sort((left, right) => right.needed - left.needed || left.name.localeCompare(right.name));
+    return { entries, materials: materialRows, totalCompletions, reputationGranted, reputationNeeded, totalRequired, accounted, missingUnits, valueAuec, unpricedItems, readiness: totalRequired ? Math.round((accounted / totalRequired) * 100) : 100 };
+  }, [allocationFor, recipes, todos]);
   const recipeStale = Boolean(data && (data.freshness.recipesStale || isOlderThan(data.patch?.extractedAt, RECIPE_STALE_MS)));
   const priceStale = Boolean(data && (data.freshness.pricesStale || isOlderThan(data.freshness.latestPriceAt, PRICE_STALE_MS)));
 
@@ -183,6 +248,45 @@ export default function RecipePlanner() {
   function changeView(next: ViewMode) {
     setViewMode(next);
     try { window.localStorage.setItem(VIEW_MODE_KEY, next); } catch { /* preference is optional */ }
+  }
+  function toggleSearch() {
+    setSearchVisible((current) => {
+      const next = !current;
+      try { window.localStorage.setItem(SEARCH_VISIBLE_KEY, String(next)); } catch { /* preference is optional */ }
+      return next;
+    });
+  }
+  async function updateTodo(recipeId: string, quantity: number) {
+    const nextQuantity = Math.max(0, Math.min(99, Math.trunc(quantity)));
+    const previous = todos[recipeId] ?? 0;
+    if (pendingTodos.has(recipeId) || nextQuantity === previous) return;
+    setNotice(null);
+    setSaveError(null);
+    setTodos((current) => { const next = { ...current }; if (nextQuantity) next[recipeId] = nextQuantity; else delete next[recipeId]; return next; });
+    if (!session.user) {
+      try {
+        const next = { ...todos }; if (nextQuantity) next[recipeId] = nextQuantity; else delete next[recipeId];
+        window.localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(Object.entries(next).map(([id, value]) => ({ recipeId: id, quantity: value }))));
+        setNotice("To-do list saved on this device. Sign in to sync it across devices.");
+      } catch {
+        setTodos((current) => { const next = { ...current }; if (previous) next[recipeId] = previous; else delete next[recipeId]; return next; });
+        setSaveError("This browser could not save the to-do list change.");
+      }
+      return;
+    }
+    setPendingTodos((current) => new Set(current).add(recipeId));
+    try {
+      const response = await fetch("/api/todos", nextQuantity
+        ? { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipeId, quantity: nextQuantity }) }
+        : { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipeId }) });
+      if (!response.ok) throw new Error("Save failed");
+      setNotice("To-do list synced to your account.");
+    } catch {
+      setTodos((current) => { const next = { ...current }; if (previous) next[recipeId] = previous; else delete next[recipeId]; return next; });
+      setSaveError("The to-do list change was not saved. The previous quantity was restored.");
+    } finally {
+      setPendingTodos((current) => { const next = new Set(current); next.delete(recipeId); return next; });
+    }
   }
   async function updateAllocation(itemId: string, next: ComponentAllocation, previous: ComponentAllocation) {
     if (pendingItems.has(itemId) || (next.ownedQuantity === previous.ownedQuantity && next.farmableQuantity === previous.farmableQuantity)) return;
@@ -218,6 +322,7 @@ export default function RecipePlanner() {
       if (!response.ok) throw new Error("Logout failed");
       setSession({ user: null });
       setAllocations({ ...defaultAllocations(recipes), ...readLocalAllocations() });
+      setTodos(readLocalTodos());
       setNotice("Signed out. Inventory changes now stay on this device.");
     } catch { setSaveError("Could not sign out. Please try again."); }
     finally { setLoggingOut(false); }
@@ -228,8 +333,21 @@ export default function RecipePlanner() {
       <header className="topbar">
         <a className="brand" href="#planner" aria-label="Wikelo Solver home"><span className="brand-mark" aria-hidden="true">W</span><span>Wikelo <em>Solver</em></span></a>
         <nav aria-label="Primary navigation" className="main-nav"><a href="#planner" className="active" onClick={(event) => { if (recipeFocused) { event.preventDefault(); changeRecipe(); } }}>Planner</a><a href="#recipe-details" onClick={(event) => { if (selectedRecipe) { event.preventDefault(); chooseRecipe(selectedRecipe.id); } }}>Current recipe</a><a href="/settings">Settings</a></nav>
+        <button className="todo-nav-button" type="button" onClick={() => setTodoOpen(true)}><span>To-do list</span><b>{todoSummary.totalCompletions}</b></button>
         {session.user ? <div className="account-control"><span className="account-avatar" aria-hidden="true">{session.user.displayName.slice(0, 1)}</span><span><strong>{session.user.displayName}</strong><small>Inventory synced</small></span><button type="button" onClick={() => void logout()} disabled={loggingOut}>{loggingOut ? "Signing out…" : "Log out"}</button></div> : <a className="discord-button" href="/auth/discord/start"><span aria-hidden="true">◆</span><span>Sign in with Discord<small>Sync inventory</small></span></a>}
       </header>
+
+      {todoOpen && <div className="todo-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTodoOpen(false); }}>
+        <aside className="todo-drawer" role="dialog" aria-modal="true" aria-labelledby="todo-title">
+          <header><div><p className="eyebrow">Full completion plan</p><h2 id="todo-title">To-do list</h2></div><button type="button" className="todo-close" onClick={() => setTodoOpen(false)} aria-label="Close to-do list">×</button></header>
+          {todoSummary.entries.length === 0 ? <div className="todo-empty"><span aria-hidden="true">◇</span><h3>No recipes queued</h3><p>Open a recipe and add one or more completions to build a combined material plan.</p><button type="button" onClick={() => setTodoOpen(false)}>Browse recipes</button></div> : <>
+            <section className="todo-stat-grid" aria-label="To-do totals"><div><span>Completions</span><strong>{todoSummary.totalCompletions}</strong><small>{todoSummary.entries.length} unique recipes</small></div><div><span>Materials ready</span><strong>{todoSummary.readiness}%</strong><small>{todoSummary.accounted}/{todoSummary.totalRequired} units</small></div><div><span>Missing materials</span><strong>{todoSummary.missingUnits}</strong><small>{todoSummary.materials.filter((item) => item.needed > 0).length} item types</small></div><div><span>Still to source</span><strong>{formatAuec(todoSummary.valueAuec)}</strong><small>aUEC{todoSummary.unpricedItems ? ` + ${todoSummary.unpricedItems} unpriced` : ""}</small></div><div><span>Reputation needed</span><strong>{todoSummary.reputationNeeded}</strong><small>highest unlock threshold</small></div><div><span>Reputation granted</span><strong>+{todoSummary.reputationGranted}</strong><small>after all completions</small></div></section>
+            <section className="todo-section"><div className="todo-section-heading"><div><h3>Queued recipes</h3><p>Change the number of completions at any time.</p></div></div><div className="todo-recipes">{todoSummary.entries.map(({ recipe, quantity }) => <article key={recipe.id}><div><strong>{recipe.name}</strong><small>{recipe.output.quantity * quantity}× {recipe.output.name} total</small></div><label><span>Qty</span><input key={`${recipe.id}-${quantity}`} type="number" min="1" max="99" defaultValue={quantity} disabled={pendingTodos.has(recipe.id)} onBlur={(event) => void updateTodo(recipe.id, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label><button type="button" onClick={() => { setTodoOpen(false); chooseRecipe(recipe.id); }}>Open</button><button type="button" className="remove" disabled={pendingTodos.has(recipe.id)} onClick={() => void updateTodo(recipe.id, 0)}>Remove</button></article>)}</div></section>
+            <section className="todo-section"><div className="todo-section-heading"><div><h3>Combined materials</h3><p>Inventory is applied once across every queued recipe.</p></div><span>{todoSummary.missingUnits} units missing</span></div><div className="todo-materials">{todoSummary.materials.map((material) => <article className={material.needed ? "missing" : "ready"} key={material.itemId}><div><strong>{material.name}</strong><small>{material.required} required</small></div><dl><div><dt>Owned</dt><dd>{material.owned}</dd></div><div><dt>Farmable</dt><dd>{material.farmable}</dd></div><div><dt>Missing</dt><dd>{material.needed}</dd></div></dl><div className="todo-material-cost"><strong>{material.unitPriceAuec === null && material.needed ? "Price missing" : `${formatAuec(material.costAuec)} aUEC`}</strong>{material.uexMarketplaceUrl && <a href={material.uexMarketplaceUrl} target="_blank" rel="noreferrer">UEX listing</a>}</div></article>)}</div></section>
+            {!session.user && <p className="local-disclaimer">This to-do list is saved only in this browser. <a href="/auth/discord/start">Sign in</a> to sync it across devices.</p>}
+          </>}
+        </aside>
+      </div>}
 
       <section className="hero" aria-labelledby="page-title">
         <div><p className="eyebrow">Live Wikelo mission planner</p><h1 id="page-title">Choose a commission.<br /><i>Finish the recipe.</i></h1><p className="hero-copy">Select one recipe, divide each requirement between owned, farmable, and still needed, then see the exact amount left to source.</p></div>
@@ -237,11 +355,12 @@ export default function RecipePlanner() {
       </section>
       {(notice || saveError) && <div className={`notice-bar ${saveError ? "error" : ""}`} role={saveError ? "alert" : "status"}>{saveError ?? notice}</div>}
 
-      <section className="planner-controls" id="planner" aria-label="Search and filter recipes">
-        <label className="global-search" htmlFor="recipe-search"><span>Search recipes and ingredients</span><div className="search-box"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try a recipe, reward, or component name…" /></div></label>
+      <section className={`planner-controls ${searchVisible ? "" : "search-hidden"}`} id="planner" aria-label="Search and filter recipes">
+        {searchVisible && <label className="global-search" htmlFor="recipe-search"><span>Search recipes and ingredients</span><div className="search-box"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try a recipe, reward, or component name…" /></div></label>}
         <div className="control-group"><span>Readiness</span><div className="segmented-control">{([["all", "All"], ["ready", "Ready"], ["needed", "Needs items"]] as Array<[ReadinessFilter, string]>).map(([value, label]) => <button key={value} type="button" className={readiness === value ? "selected" : ""} aria-pressed={readiness === value} onClick={() => setReadiness(value)}>{label}</button>)}</div></div>
         <label className="sort-control"><span>Sort</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortKey)}><option value="price">Lowest price</option><option value="name">Recipe name</option><option value="needed">Reputation needed</option><option value="granted">Reputation granted</option></select></label>
         <div className="view-toggle" role="group" aria-label="Recipe summary view"><span>View</span><div><button type="button" className={viewMode === "table" ? "selected" : ""} onClick={() => changeView("table")} aria-pressed={viewMode === "table"}>Table</button><button type="button" className={viewMode === "cards" ? "selected" : ""} onClick={() => changeView("cards")} aria-pressed={viewMode === "cards"}>Cards</button></div></div>
+        <button type="button" className="search-visibility-toggle" onClick={toggleSearch}>{searchVisible ? "Hide search" : `Show search${search ? " (filtered)" : ""}`}</button>
       </section>
 
       <section className={`planner-workspace ${recipeFocused ? "focused" : ""}`} aria-busy={loading}>
@@ -261,7 +380,7 @@ export default function RecipePlanner() {
         <section className="detail-panel" id="recipe-details" aria-live="polite">
           {selectedRecipe && selectedSummary ? <>
             {recipeFocused && <div className="focus-toolbar"><button type="button" onClick={changeRecipe}><span aria-hidden="true">←</span> Change recipe</button><span><strong>{selectedRecipe.name}</strong><small>{selectedSummary.readiness}% ready</small></span></div>}
-            <header className="detail-title"><div><p className="eyebrow">Current recipe</p><h2>{selectedRecipe.name}</h2><p>Produces {selectedRecipe.output.quantity}× {selectedRecipe.output.name}</p></div><div className="detail-progress"><span>{selectedSummary.readiness}% ready</span><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary.readiness}%` }} /></div></div></header>
+            <header className="detail-title"><div><p className="eyebrow">Current recipe</p><h2>{selectedRecipe.name}</h2><p>Produces {selectedRecipe.output.quantity}× {selectedRecipe.output.name}</p></div><div className="detail-actions"><div className="detail-progress"><span>{selectedSummary.readiness}% ready</span><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary.readiness}%` }} /></div></div><div className="todo-add-control"><input aria-label="Number of completions to add" type="number" min="1" max="99" value={todoQuantity} onChange={(event) => setTodoQuantity(Math.max(1, Math.min(99, Number(event.target.value))))} /><button type="button" disabled={pendingTodos.has(selectedRecipe.id)} onClick={() => void updateTodo(selectedRecipe.id, (todos[selectedRecipe.id] ?? 0) + todoQuantity)}>Add to to-do</button></div></div></header>
             <div className="recipe-overview"><div><span>Reputation needed</span><strong>{selectedRecipe.reputationNeeded}</strong></div><div><span>Granted</span><strong>+{selectedRecipe.reputationGranted}</strong></div><div className="overview-cost"><span>Still to source</span><strong>{formatAuec(selectedSummary.valueAuec)} <small>aUEC</small></strong><p>{selectedSummary.complete ? "All needed units are priced." : `${selectedSummary.missingItemIds.length} needed item price${selectedSummary.missingItemIds.length === 1 ? " is" : "s are"} missing.`}</p></div></div>
             <div className="component-heading"><div><h3>Allocate required units</h3><p>Owned + farmable + needed always equals the recipe requirement.</p></div><span>{selectedSummary.accountedQuantity}/{selectedSummary.totalQuantity} accounted</span></div>
             <div className="component-list">{selectedRecipe.components.map((component) => {

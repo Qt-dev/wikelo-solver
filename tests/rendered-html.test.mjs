@@ -20,6 +20,10 @@ test("the app shell uses live Wikelo product metadata", async () => {
   assert.match(planner, /Cards/);
   assert.match(planner, /Change recipe/);
   assert.match(planner, /recipe-focus/);
+  assert.match(planner, /\/api\/todos/);
+  assert.match(planner, /To-do list/);
+  assert.match(planner, /Combined materials/);
+  assert.match(planner, /Hide search/);
   assert.doesNotMatch(planner, /Search recipe, output, component, or category/);
   assert.doesNotMatch(`${layout}\n${planner}`, /sample-data|Sample data|Future account sync/);
   assert.doesNotMatch(layout, /codex-preview|Starter Project/);

@@ -37,6 +37,8 @@ a { color: inherit; }
 .account-control { display: flex; align-items: center; gap: 9px; color: #dfd3c1; font-size: 11px; }
 .account-avatar { width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid #805b40; border-radius: 50%; background: #413126; color: var(--amber-light); font: 600 13px Georgia, serif; }
 .account-control button { padding: 7px 9px; color: #bbaa95; border: 1px solid #4b463f; background: transparent; font-size: 10px; }
+.todo-nav-button { min-height: 40px; padding: 0 11px; display: flex; align-items: center; gap: 9px; border: 1px solid #76543d; background: #32251e; color: #efbd83; font-size: 10px; }
+.todo-nav-button b { min-width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: var(--amber); color: #17191e; font-size: 10px; }
 
 .hero { min-height: 242px; padding: 44px 3.5vw 38px; display: flex; align-items: center; justify-content: space-between; gap: 48px; border-bottom: 1px solid var(--edge); }
 .eyebrow { margin: 0 0 9px; color: var(--amber-light); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; }
@@ -52,7 +54,8 @@ a { color: inherit; }
 .notice-bar { padding: 11px 15px; color: #c8d8ae; border-bottom: 1px solid rgba(167, 184, 135, 0.25); background: rgba(82, 105, 69, 0.14); text-align: center; font-size: 11px; }
 .notice-bar.error, .settings-notice.error { color: #f1b29d; border-color: rgba(225, 125, 96, 0.28); background: rgba(126, 52, 39, 0.17); }
 
-.planner-controls { position: relative; z-index: 2; padding: 22px 24px; display: grid; grid-template-columns: minmax(320px, 1fr) auto 170px auto; align-items: end; gap: 20px; border-bottom: 1px solid var(--edge); background: rgba(18, 21, 27, 0.9); }
+.planner-controls { position: relative; z-index: 2; padding: 22px 24px; display: grid; grid-template-columns: minmax(320px, 1fr) auto 170px auto auto; align-items: end; gap: 20px; border-bottom: 1px solid var(--edge); background: rgba(18, 21, 27, 0.9); }
+.planner-controls.search-hidden { grid-template-columns: auto 170px auto 1fr; }
 .global-search > span, .control-group > span, .sort-control > span, .view-toggle > span { display: block; margin-bottom: 7px; color: #b9ab98; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
 .search-box { min-height: 45px; display: flex; align-items: center; gap: 9px; padding: 0 13px; border: 1px solid #4a443b; background: #14171c; color: #d7a26d; }
 .search-box:focus-within { border-color: #ba7b4c; box-shadow: 0 0 0 3px rgba(220, 148, 87, 0.08); }
@@ -65,6 +68,7 @@ a { color: inherit; }
 .sort-control select { width: 100%; min-height: 45px; padding: 0 10px; border: 1px solid #454139; outline: 0; background: #191c22; color: #e4c69e; font-size: 11px; }
 .view-toggle > div { display: flex; border: 1px solid #454139; }
 .view-toggle button { min-width: 62px; }
+.search-visibility-toggle { min-height: 45px; padding: 0 12px; border: 1px solid #454139; background: transparent; color: #bbaa95; font-size: 10px; white-space: nowrap; }
 
 .planner-workspace { display: grid; grid-template-columns: minmax(340px, 0.34fr) minmax(620px, 0.66fr); align-items: start; min-height: 760px; }
 .recipe-focus .hero, .recipe-focus .planner-controls { display: none; }
@@ -112,6 +116,53 @@ a { color: inherit; }
 .detail-title p:last-child { margin: 9px 0 0; color: #ad9f8c; font-size: 12px; }
 .detail-progress { width: 170px; flex: none; align-self: center; }
 .detail-progress > span { margin-bottom: 10px; color: #c6d5a8; text-align: right; }
+.detail-actions { display: flex; align-items: center; gap: 18px; }
+.todo-add-control { display: flex; min-height: 41px; border: 1px solid #76543d; }
+.todo-add-control input { width: 52px; border: 0; border-right: 1px solid #76543d; outline: 0; background: #171a20; color: #f1d0a5; text-align: center; }
+.todo-add-control button { padding: 0 13px; border: 0; background: #493225; color: #f3c487; font-size: 10px; font-weight: 700; white-space: nowrap; }
+
+.todo-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; background: rgba(5, 7, 10, 0.72); backdrop-filter: blur(3px); }
+.todo-drawer { width: min(760px, 100%); height: 100%; overflow-y: auto; padding: 28px clamp(20px, 4vw, 42px) 42px; border-left: 1px solid rgba(220, 148, 87, 0.36); background: #15191f; box-shadow: -24px 0 60px rgba(0,0,0,.36); }
+.todo-drawer > header { display: flex; align-items: start; justify-content: space-between; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--edge); }
+.todo-drawer h2 { margin: 0; color: #f1e5d2; font: 500 34px Georgia, serif; }
+.todo-close { width: 38px; height: 38px; border: 1px solid #4b463f; background: transparent; color: #d8c8b2; font-size: 24px; }
+.todo-empty { min-height: 56vh; display: grid; place-items: center; align-content: center; gap: 10px; text-align: center; }
+.todo-empty > span { color: var(--amber); font-size: 34px; }
+.todo-empty h3, .todo-empty p { margin: 0; }
+.todo-empty p { max-width: 390px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.todo-empty button { margin-top: 8px; padding: 10px 14px; border: 1px solid #76543d; background: #32251e; color: #efbd83; }
+.todo-stat-grid { margin: 22px 0 28px; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--edge); }
+.todo-stat-grid > div { min-height: 96px; padding: 14px; border-right: 1px solid var(--edge); border-bottom: 1px solid var(--edge); }
+.todo-stat-grid > div:nth-child(3n) { border-right: 0; }
+.todo-stat-grid > div:nth-child(n+4) { border-bottom: 0; }
+.todo-stat-grid span, .todo-stat-grid small { display: block; color: #918678; font-size: 9px; }
+.todo-stat-grid span { text-transform: uppercase; letter-spacing: .08em; }
+.todo-stat-grid strong { display: block; margin: 7px 0 4px; color: #e9c18e; font: 600 23px Georgia, serif; }
+.todo-section { margin-top: 28px; }
+.todo-section-heading { display: flex; justify-content: space-between; align-items: end; gap: 15px; margin-bottom: 11px; }
+.todo-section-heading h3 { margin: 0; color: #eadfce; font: 500 19px Georgia, serif; }
+.todo-section-heading p, .todo-section-heading > span { margin: 4px 0 0; color: #918678; font-size: 9px; }
+.todo-recipes, .todo-materials { display: grid; gap: 8px; }
+.todo-recipes article { min-height: 65px; padding: 10px 12px; display: grid; grid-template-columns: minmax(150px, 1fr) 70px auto auto; align-items: center; gap: 10px; border: 1px solid var(--edge); background: #1d2128; }
+.todo-recipes strong, .todo-recipes small { display: block; }
+.todo-recipes strong { color: #eadfce; font: 600 14px Georgia, serif; }
+.todo-recipes small { margin-top: 3px; color: #918678; font-size: 9px; }
+.todo-recipes label { display: flex; align-items: center; gap: 6px; color: #918678; font-size: 9px; }
+.todo-recipes input { width: 44px; padding: 7px 4px; border: 1px solid #4b463f; background: #15181d; color: #f0d0a5; text-align: center; }
+.todo-recipes button { padding: 8px 9px; border: 1px solid #66503e; background: transparent; color: #dfb47e; font-size: 9px; }
+.todo-recipes button.remove { color: #d29b8b; border-color: #634941; }
+.todo-materials article { padding: 12px; display: grid; grid-template-columns: minmax(150px, 1fr) minmax(190px, .9fr) 110px; align-items: center; gap: 16px; border: 1px solid var(--edge); background: #1d2128; }
+.todo-materials article.ready { border-color: rgba(157, 183, 126, 0.28); }
+.todo-materials strong, .todo-materials small { display: block; }
+.todo-materials > article > div:first-child strong { color: #eadfce; font: 600 13px Georgia, serif; }
+.todo-materials small { margin-top: 3px; color: #918678; font-size: 9px; }
+.todo-materials dl { margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); }
+.todo-materials dl div { text-align: center; }
+.todo-materials dt { color: #80786f; font-size: 8px; text-transform: uppercase; }
+.todo-materials dd { margin: 3px 0 0; color: #d8c8b2; font-size: 12px; }
+.todo-materials article.missing dl div:last-child dd { color: var(--danger); }
+.todo-material-cost { text-align: right; color: #e2c194; font-size: 10px; }
+.todo-material-cost a { display: block; margin-top: 5px; color: #c18d5d; font-size: 8px; }
 .recipe-overview { display: grid; grid-template-columns: 0.7fr 0.7fr 1.8fr; gap: 0; border-bottom: 1px solid var(--edge); }
 .recipe-overview > div { min-height: 106px; padding: 19px 20px; border-right: 1px solid var(--edge); }
 .recipe-overview > div:first-child { padding-left: 0; }
@@ -217,11 +268,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .spinner { animation: none; } .progress-track span { transition: none; } }
 
 @media (max-width: 1180px) {
-  .planner-controls { grid-template-columns: minmax(300px, 1fr) auto auto; }
+  .planner-controls { grid-template-columns: minmax(300px, 1fr) auto auto auto; }
+  .planner-controls.search-hidden { grid-template-columns: auto auto auto 1fr; }
   .view-toggle { grid-column: 3; }
   .sort-control { grid-column: 2; grid-row: 1; }
   .control-group { grid-column: 2; grid-row: 2; }
   .global-search { grid-row: 1 / 3; }
+  .search-visibility-toggle { grid-column: 4; grid-row: 1 / 3; align-self: end; }
   .planner-workspace { grid-template-columns: minmax(310px, 0.38fr) minmax(500px, 0.62fr); }
   .cards-view .recipe-summaries { grid-template-columns: 1fr; }
   .allocation-grid { grid-template-columns: repeat(3, 1fr); }
@@ -235,7 +288,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 900px) {
   .topbar, .hero, .planner-controls, .planner-workspace, .data-status, footer, .notice-bar, .settings-intro, .settings-content, .settings-signin { width: min(100% - 28px, 720px); }
   .main-nav { display: none; }
-  .discord-button, .account-control, .settings-account { margin-left: auto; }
+  .todo-nav-button { margin-left: auto; }
+  .discord-button, .account-control, .settings-account { margin-left: 0; }
   .account-control > span:not(.account-avatar) { display: none; }
   .hero { min-height: 0; padding: 38px 0 34px; }
   .hero h1 { font-size: 43px; }
@@ -244,6 +298,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .global-search { grid-column: 1 / -1; grid-row: auto; }
   .control-group, .sort-control, .view-toggle { grid-column: auto; grid-row: auto; }
   .view-toggle { grid-column: 1 / -1; }
+  .search-visibility-toggle { grid-column: auto; grid-row: auto; }
   .view-toggle > div { width: fit-content; }
   .planner-workspace { display: block; }
   .planner-workspace.focused .detail-panel { min-height: calc(100vh - 66px); padding-inline: 0; }
@@ -251,6 +306,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .recipe-browser { min-height: 0; padding: 25px 0 30px; border: 0; border-bottom: 1px solid var(--edge); }
   .detail-panel { min-height: 0; padding: 32px 0 42px; }
   .detail-title h2 { font-size: 34px; }
+  .detail-actions { flex-direction: column; align-items: flex-end; }
   .data-status { padding-inline: 0; grid-template-columns: 1fr; }
   .data-status dl { grid-template-columns: 1fr; gap: 9px; }
   .freshness-warnings { justify-content: flex-start; }
@@ -263,13 +319,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .discord-button { font-size: 0; padding: 0 11px; }
   .discord-button > span:first-child { font-size: 15px; }
   .discord-button small { display: none; }
+  .todo-nav-button span { display: none; }
   .hero h1 { font-size: 37px; }
   .planner-controls { grid-template-columns: 1fr; gap: 14px; }
   .global-search, .view-toggle { grid-column: 1; }
   .cards-view .recipe-summaries { grid-template-columns: 1fr; }
   .detail-title { display: block; }
+  .detail-actions { margin-top: 18px; align-items: stretch; }
   .detail-progress { width: 100%; margin-top: 18px; }
   .detail-progress > span { text-align: left; }
+  .todo-stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .todo-stat-grid > div:nth-child(3n) { border-right: 1px solid var(--edge); }
+  .todo-stat-grid > div:nth-child(2n) { border-right: 0; }
+  .todo-stat-grid > div:nth-child(n+4) { border-bottom: 1px solid var(--edge); }
+  .todo-stat-grid > div:nth-child(n+5) { border-bottom: 0; }
+  .todo-recipes article { grid-template-columns: minmax(120px, 1fr) 65px; }
+  .todo-recipes button { grid-row: 2; }
+  .todo-materials article { grid-template-columns: 1fr; gap: 10px; }
+  .todo-material-cost { text-align: left; }
   .recipe-overview { grid-template-columns: 1fr 1fr; }
   .recipe-overview .overview-cost { grid-column: 1 / -1; padding-left: 0; }
   .recipe-overview > div:nth-child(2) { border-right: 0; }

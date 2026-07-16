@@ -269,3 +269,22 @@ export const userPriceSettings = sqliteTable(
     ),
   ],
 );
+
+export const userRecipeTodos = sqliteTable(
+  "user_recipe_todos",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    recipeId: text("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull().default(1),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.recipeId] }),
+    index("user_recipe_todos_recipe_idx").on(table.recipeId),
+    check("user_recipe_todos_quantity_check", sql`${table.quantity} between 1 and 99`),
+  ],
+);

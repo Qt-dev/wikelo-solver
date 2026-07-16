@@ -48,6 +48,16 @@ export type PriceSettingsResponse = {
   settings: PriceSettingDto[];
 };
 
+export type RecipeTodoDto = {
+  recipeId: string;
+  quantity: number;
+  updatedAt?: string;
+};
+
+export type RecipeTodosResponse = {
+  todos: RecipeTodoDto[];
+};
+
 export type RecipeDto = {
   id: string;
   name: string;
