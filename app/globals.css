@@ -67,6 +67,9 @@ a { color: inherit; }
 .view-toggle button { min-width: 62px; }
 
 .planner-workspace { display: grid; grid-template-columns: minmax(340px, 0.34fr) minmax(620px, 0.66fr); align-items: start; min-height: 760px; }
+.recipe-focus .hero, .recipe-focus .planner-controls { display: none; }
+.planner-workspace.focused { display: block; }
+.planner-workspace.focused .detail-panel { min-height: calc(100vh - 76px); padding-inline: clamp(24px, 6vw, 92px); }
 .recipe-browser { min-height: 760px; padding: 27px 22px 34px; border-right: 1px solid var(--edge); }
 .browser-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
 .browser-heading h2, .detail-title h2, .detail-placeholder h2 { margin: 0; color: #f1e5d2; font: 500 26px Georgia, serif; }
@@ -98,6 +101,12 @@ a { color: inherit; }
 .cards-view .card-reputation { display: block; grid-column: 1 / 4; color: #a89b8b; font-size: 9px; }
 
 .detail-panel { min-height: 760px; padding: 30px clamp(24px, 3vw, 46px) 42px; background: rgba(12, 15, 20, 0.58); }
+.focus-toolbar { position: sticky; top: 0; z-index: 8; min-height: 58px; margin: -30px calc(-1 * clamp(24px, 6vw, 92px)) 27px; padding: 0 clamp(24px, 6vw, 92px); display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid rgba(220, 148, 87, 0.28); background: rgba(17, 21, 27, 0.96); backdrop-filter: blur(12px); }
+.focus-toolbar button { min-height: 34px; padding: 0 12px; border: 1px solid #76543d; background: #32251e; color: #efbd83; font-size: 10px; }
+.focus-toolbar button span { margin-right: 5px; font-size: 14px; }
+.focus-toolbar > span { min-width: 0; display: flex; align-items: baseline; gap: 10px; text-align: right; }
+.focus-toolbar strong { max-width: 48vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e8dcc9; font: 600 13px Georgia, serif; }
+.focus-toolbar small { color: #b8ca98; font-size: 9px; white-space: nowrap; }
 .detail-title { display: flex; justify-content: space-between; gap: 34px; padding-bottom: 22px; border-bottom: 1px solid var(--edge); }
 .detail-title h2 { font-size: clamp(30px, 3vw, 42px); }
 .detail-title p:last-child { margin: 9px 0 0; color: #ad9f8c; font-size: 12px; }
@@ -237,6 +246,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .view-toggle { grid-column: 1 / -1; }
   .view-toggle > div { width: fit-content; }
   .planner-workspace { display: block; }
+  .planner-workspace.focused .detail-panel { min-height: calc(100vh - 66px); padding-inline: 0; }
+  .focus-toolbar { margin: -32px 0 25px; padding-inline: 0; }
   .recipe-browser { min-height: 0; padding: 25px 0 30px; border: 0; border-bottom: 1px solid var(--edge); }
   .detail-panel { min-height: 0; padding: 32px 0 42px; }
   .detail-title h2 { font-size: 34px; }

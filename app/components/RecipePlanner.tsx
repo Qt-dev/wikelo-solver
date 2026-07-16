@@ -75,6 +75,7 @@ export default function RecipePlanner() {
   const [sortBy, setSortBy] = useState<SortKey>("price");
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [recipeFocused, setRecipeFocused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -101,7 +102,12 @@ export default function RecipePlanner() {
     setData(nextData);
     setSession(nextSession);
     setAllocations({ ...defaultAllocations(nextData.recipes), ...(nextSession.user ? saved : readLocalAllocations()) });
-    setSelectedId((current) => current && nextData.recipes.some((recipe) => recipe.id === current) ? current : nextData.recipes[0]?.id ?? null);
+    const requestedRecipeId = new URL(window.location.href).searchParams.get("recipe");
+    const requestedRecipe = requestedRecipeId && nextData.recipes.some((recipe) => recipe.id === requestedRecipeId)
+      ? requestedRecipeId
+      : null;
+    setSelectedId((current) => requestedRecipe ?? (current && nextData.recipes.some((recipe) => recipe.id === current) ? current : nextData.recipes[0]?.id ?? null));
+    setRecipeFocused(Boolean(requestedRecipe));
     if (sessionResult.status === "rejected") setNotice("Account status is unavailable. Changes will stay on this device.");
     setLoading(false);
   }, []);
@@ -161,7 +167,18 @@ export default function RecipePlanner() {
 
   function chooseRecipe(id: string) {
     setSelectedId(id);
-    if (window.matchMedia("(max-width: 900px)").matches) window.setTimeout(() => document.getElementById("recipe-details")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    setRecipeFocused(true);
+    const url = new URL(window.location.href);
+    url.searchParams.set("recipe", id);
+    window.history.replaceState(null, "", url);
+    window.setTimeout(() => document.getElementById("recipe-details")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+  function changeRecipe() {
+    setRecipeFocused(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("recipe");
+    window.history.replaceState(null, "", url);
+    window.setTimeout(() => document.getElementById("planner")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
   function changeView(next: ViewMode) {
     setViewMode(next);
@@ -207,10 +224,10 @@ export default function RecipePlanner() {
   }
 
   return (
-    <main className="planner-shell">
+    <main className={`planner-shell ${recipeFocused ? "recipe-focus" : ""}`}>
       <header className="topbar">
         <a className="brand" href="#planner" aria-label="Wikelo Solver home"><span className="brand-mark" aria-hidden="true">W</span><span>Wikelo <em>Solver</em></span></a>
-        <nav aria-label="Primary navigation" className="main-nav"><a href="#planner" className="active">Planner</a><a href="#recipe-details">Current recipe</a><a href="/settings">Settings</a></nav>
+        <nav aria-label="Primary navigation" className="main-nav"><a href="#planner" className="active" onClick={(event) => { if (recipeFocused) { event.preventDefault(); changeRecipe(); } }}>Planner</a><a href="#recipe-details" onClick={(event) => { if (selectedRecipe) { event.preventDefault(); chooseRecipe(selectedRecipe.id); } }}>Current recipe</a><a href="/settings">Settings</a></nav>
         {session.user ? <div className="account-control"><span className="account-avatar" aria-hidden="true">{session.user.displayName.slice(0, 1)}</span><span><strong>{session.user.displayName}</strong><small>Inventory synced</small></span><button type="button" onClick={() => void logout()} disabled={loggingOut}>{loggingOut ? "Signing out…" : "Log out"}</button></div> : <a className="discord-button" href="/auth/discord/start"><span aria-hidden="true">◆</span><span>Sign in with Discord<small>Sync inventory</small></span></a>}
       </header>
 
@@ -227,8 +244,8 @@ export default function RecipePlanner() {
         <div className="view-toggle" role="group" aria-label="Recipe summary view"><span>View</span><div><button type="button" className={viewMode === "table" ? "selected" : ""} onClick={() => changeView("table")} aria-pressed={viewMode === "table"}>Table</button><button type="button" className={viewMode === "cards" ? "selected" : ""} onClick={() => changeView("cards")} aria-pressed={viewMode === "cards"}>Cards</button></div></div>
       </section>
 
-      <section className="planner-workspace" aria-busy={loading}>
-        <aside className={`recipe-browser ${viewMode}-view`} aria-label="Recipe summaries">
+      <section className={`planner-workspace ${recipeFocused ? "focused" : ""}`} aria-busy={loading}>
+        {!recipeFocused && <aside className={`recipe-browser ${viewMode}-view`} aria-label="Recipe summaries">
           <div className="browser-heading"><div><p className="eyebrow">Recipe index</p><h2>Choose a recipe</h2></div><span>{loading ? "Loading" : `${filteredRecipes.length} of ${recipes.length}`}</span></div>
           {data?.status === "importing" && <div className="state-banner importing" role="status"><span className="spinner" aria-hidden="true" />A new patch is importing. The last complete patch remains available.</div>}
           {loading ? <div className="loading-state" role="status"><span className="spinner" aria-hidden="true" /><h3>Loading live recipes</h3><p>Reading the active patch and current prices.</p></div>
@@ -239,10 +256,11 @@ export default function RecipePlanner() {
               const summary = summaryFor(recipe);
               return <article className={`recipe-summary ${recipe.id === selectedRecipe?.id ? "chosen" : ""}`} key={recipe.id}><button type="button" onClick={() => chooseRecipe(recipe.id)} aria-pressed={recipe.id === selectedRecipe?.id}><span className={`recipe-glyph ${categoryTone(recipe.category)}`} aria-hidden="true">✦</span><span className="recipe-name"><strong>{recipe.name}</strong><small>{recipe.output.quantity}× {recipe.output.name}</small></span><span className="summary-price"><b>{formatAuec(summary.valueAuec)}</b><small>{summary.complete ? "aUEC left" : `+ ${summary.missingItemIds.length} unpriced`}</small></span><span className={`readiness-pill ${summary.ready ? "ready" : ""}`}>{summary.readiness}%</span><span className="card-reputation"><b>{recipe.reputationNeeded}</b> rep needed · +{recipe.reputationGranted}</span></button></article>;
             })}</div>}
-        </aside>
+        </aside>}
 
         <section className="detail-panel" id="recipe-details" aria-live="polite">
           {selectedRecipe && selectedSummary ? <>
+            {recipeFocused && <div className="focus-toolbar"><button type="button" onClick={changeRecipe}><span aria-hidden="true">←</span> Change recipe</button><span><strong>{selectedRecipe.name}</strong><small>{selectedSummary.readiness}% ready</small></span></div>}
             <header className="detail-title"><div><p className="eyebrow">Current recipe</p><h2>{selectedRecipe.name}</h2><p>Produces {selectedRecipe.output.quantity}× {selectedRecipe.output.name}</p></div><div className="detail-progress"><span>{selectedSummary.readiness}% ready</span><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary.readiness}%` }} /></div></div></header>
             <div className="recipe-overview"><div><span>Reputation needed</span><strong>{selectedRecipe.reputationNeeded}</strong></div><div><span>Granted</span><strong>+{selectedRecipe.reputationGranted}</strong></div><div className="overview-cost"><span>Still to source</span><strong>{formatAuec(selectedSummary.valueAuec)} <small>aUEC</small></strong><p>{selectedSummary.complete ? "All needed units are priced." : `${selectedSummary.missingItemIds.length} needed item price${selectedSummary.missingItemIds.length === 1 ? " is" : "s are"} missing.`}</p></div></div>
             <div className="component-heading"><div><h3>Allocate required units</h3><p>Owned + farmable + needed always equals the recipe requirement.</p></div><span>{selectedSummary.accountedQuantity}/{selectedSummary.totalQuantity} accounted</span></div>
