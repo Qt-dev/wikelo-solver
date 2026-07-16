@@ -25,6 +25,9 @@ test("the app shell uses live Wikelo product metadata", async () => {
   assert.match(planner, /\/api\/todos/);
   assert.match(planner, /To-do list/);
   assert.match(planner, /Combined materials/);
+  assert.match(planner, /Produced on completion/);
+  assert.match(planner, /Recipe rewards/);
+  assert.match(planner, /selectedRecipe\.outputs\.map/);
   assert.match(planner, /Hide search & filters/);
   assert.match(planner, /Show search & filters/);
   assert.match(planner, /still must gather/);

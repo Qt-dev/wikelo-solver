@@ -38,6 +38,9 @@ Assert-Equal 1 @($collectorNormalized.recipes).Count 'TheCollector contract disc
 Assert-Equal 'wikelo-inline' $collectorNormalized.recipes[0].gameRecipeId 'TheCollector contract ID mismatch.'
 Assert-Equal 'Ore' $collectorNormalized.recipes[0].components[0].name 'DataForge reference name resolution failed.'
 Assert-Equal 'Reward Box' $collectorNormalized.recipes[0].output.name 'Reward reference name resolution failed.'
+Assert-Equal 2 @($collectorNormalized.recipes[0].outputs).Count 'All reward items should be collected.'
+Assert-Equal 'Reward Token' $collectorNormalized.recipes[0].outputs[1].name 'Second reward name resolution failed.'
+Assert-Equal 20 $collectorNormalized.recipes[0].outputs[1].quantity 'Second reward quantity mismatch.'
 $invalid = $normalized | ConvertTo-Json -Depth 12 | ConvertFrom-Json
 $invalid.patch.sourceHash = 'not-a-hash'
 Assert-Throws { Assert-WikeloNormalizedV1 $invalid } 'Invalid source hash should be rejected.'

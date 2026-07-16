@@ -57,6 +57,21 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
     ) {
       throw new HttpError(400, `Recipe ${recipeIndex} is invalid or incomplete.`, "invalid_import");
     }
+    const outputs = recipe.outputs?.length ? recipe.outputs : [recipe.output];
+    const outputIds = new Set<string>();
+    for (const [outputIndex, output] of outputs.entries()) {
+      if (
+        !output ||
+        (output.gameItemId !== null && (!nonEmpty(output.gameItemId) || outputIds.has(output.gameItemId))) ||
+        !nonEmpty(output.name) ||
+        !positiveInteger(output.quantity)
+      ) {
+        throw new HttpError(400, `Recipe ${recipeIndex} output ${outputIndex} is invalid or duplicated.`, "invalid_import");
+      }
+      if (output.gameItemId) outputIds.add(output.gameItemId);
+    }
+    recipe.outputs = outputs;
+    recipe.output = outputs[0];
     recipeIds.add(recipe.gameRecipeId);
     if (recipe.category.toLocaleLowerCase("en-US") === "entityclass") recipe.category = "resource";
     const componentIds = new Set<string>();

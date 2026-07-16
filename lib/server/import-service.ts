@@ -1,6 +1,6 @@
 import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
-import { gamePatches, importRuns, itemMappings, items, recipeComponents, recipes } from "@/db/schema";
+import { gamePatches, importRuns, itemMappings, items, recipeComponents, recipeOutputs, recipes } from "@/db/schema";
 import type { NormalizedImportV1 } from "@/lib/contracts/api";
 import type { VerifiedImport } from "./import-security";
 import { stableId } from "./crypto";
@@ -69,7 +69,9 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
     await db.update(importRuns).set({ patchId }).where(eq(importRuns.id, runId));
 
     const allItemInputs = document.recipes.flatMap((recipe) => [
-      ...(recipe.output.gameItemId ? [{ gameItemId: recipe.output.gameItemId, name: recipe.output.name, category: recipe.category }] : []),
+      ...(recipe.outputs?.length ? recipe.outputs : [recipe.output])
+        .filter((output): output is typeof output & { gameItemId: string } => Boolean(output.gameItemId))
+        .map((output) => ({ gameItemId: output.gameItemId, name: output.name, category: recipe.category })),
       ...recipe.components,
     ]);
     const uniqueItems = new Map(allItemInputs.map((item) => [item.gameItemId, item]));
@@ -93,18 +95,29 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
 
     for (const recipe of document.recipes) {
       const recipeId = await stableId("rcp", `${patchId}:${recipe.gameRecipeId}`);
+      const outputs = recipe.outputs?.length ? recipe.outputs : [recipe.output];
+      const primaryOutput = outputs[0];
       await db.insert(recipes).values({
         id: recipeId,
         patchId,
         gameRecipeId: recipe.gameRecipeId,
         name: recipe.name,
         category: recipe.category,
-        outputItemId: recipe.output.gameItemId ? itemIds.get(recipe.output.gameItemId) ?? null : null,
-        outputName: recipe.output.name,
-        outputQuantity: recipe.output.quantity,
+        outputItemId: primaryOutput.gameItemId ? itemIds.get(primaryOutput.gameItemId) ?? null : null,
+        outputName: primaryOutput.name,
+        outputQuantity: primaryOutput.quantity,
         reputationNeeded: recipe.reputationNeeded,
         reputationGranted: recipe.reputationGranted,
       });
+      for (const [sortOrder, output] of outputs.entries()) {
+        await db.insert(recipeOutputs).values({
+          recipeId,
+          sortOrder,
+          itemId: output.gameItemId ? itemIds.get(output.gameItemId) ?? null : null,
+          outputName: output.name,
+          quantity: output.quantity,
+        });
+      }
       for (const [sortOrder, component] of recipe.components.entries()) {
         await db.insert(recipeComponents).values({
           recipeId,

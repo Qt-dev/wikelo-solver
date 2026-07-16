@@ -7,6 +7,7 @@
         </MissionProperty>
         <contractResults>
           <ContractResult_Item entityClass="@reward_box" amount="1" />
+          <ContractResult_Item entityClass="@reward_token" amount="20" />
         </contractResults>
       </Contract>
     </ContractGeneratorHandler_List>

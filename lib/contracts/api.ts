@@ -63,6 +63,7 @@ export type RecipeDto = {
   name: string;
   category: string;
   output: { itemId: string | null; name: string; quantity: number };
+  outputs: Array<{ itemId: string | null; name: string; quantity: number }>;
   reputationNeeded: number;
   reputationGranted: number;
   components: RecipeComponentDto[];
@@ -89,6 +90,7 @@ export type NormalizedImportV1 = {
     name: string;
     category: string;
     output: { gameItemId: string | null; name: string; quantity: number };
+    outputs?: Array<{ gameItemId: string | null; name: string; quantity: number }>;
     reputationNeeded: number;
     reputationGranted: number;
     components: Array<{ gameItemId: string; name: string; category: string; quantity: number }>;

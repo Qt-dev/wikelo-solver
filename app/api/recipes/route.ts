@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
-import { gamePatches, importRuns, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipes, userComponentPreferences, userPriceSettings } from "@/db/schema";
+import { gamePatches, importRuns, itemMappings, items, priceRefreshRuns, priceSnapshots, recipeComponents, recipeOutputs, recipes, userComponentPreferences, userPriceSettings } from "@/db/schema";
 import type { ComponentPreferenceStatus, RecipeComponentDto, RecipeDto, RecipesResponse } from "@/lib/contracts/api";
 import { currentSession } from "@/lib/server/auth";
 import { errorResponse, HttpError } from "@/lib/server/http";
@@ -31,6 +31,16 @@ export async function GET(request: Request) {
     }
 
     const recipeRows = await db.select().from(recipes).where(eq(recipes.patchId, patch.id)).orderBy(asc(recipes.name));
+    const outputRows = await db.select({
+      recipeId: recipeOutputs.recipeId,
+      sortOrder: recipeOutputs.sortOrder,
+      itemId: recipeOutputs.itemId,
+      outputName: recipeOutputs.outputName,
+      quantity: recipeOutputs.quantity,
+    }).from(recipeOutputs)
+      .innerJoin(recipes, eq(recipes.id, recipeOutputs.recipeId))
+      .where(eq(recipes.patchId, patch.id))
+      .orderBy(asc(recipeOutputs.recipeId), asc(recipeOutputs.sortOrder));
     const componentRows = await db.select({
       recipeId: recipeComponents.recipeId,
       itemId: items.id,
@@ -70,6 +80,12 @@ export async function GET(request: Request) {
     const missingPrices = new Set<string>();
 
     const payloadRecipes: RecipeDto[] = recipeRows.map((recipe) => {
+      const outputs = outputRows.filter((output) => output.recipeId === recipe.id).map((output) => ({
+        itemId: output.itemId,
+        name: output.outputName,
+        quantity: output.quantity,
+      }));
+      if (outputs.length === 0) outputs.push({ itemId: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity });
       const components: RecipeComponentDto[] = activeComponents
         .filter((component) => component.recipeId === recipe.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)
@@ -115,7 +131,8 @@ export async function GET(request: Request) {
         id: recipe.id,
         name: recipe.name,
         category: recipe.category,
-        output: { itemId: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity },
+        output: outputs[0],
+        outputs,
         reputationNeeded: recipe.reputationNeeded,
         reputationGranted: recipe.reputationGranted,
         components,

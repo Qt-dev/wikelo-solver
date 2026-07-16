@@ -105,6 +105,24 @@ export const recipes = sqliteTable(
   ],
 );
 
+export const recipeOutputs = sqliteTable(
+  "recipe_outputs",
+  {
+    recipeId: text("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull(),
+    itemId: text("item_id").references(() => items.id, { onDelete: "set null" }),
+    outputName: text("output_name").notNull(),
+    quantity: integer("quantity").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.recipeId, table.sortOrder] }),
+    index("recipe_outputs_item_id_idx").on(table.itemId),
+    check("recipe_outputs_quantity_check", sql`${table.quantity} > 0`),
+  ],
+);
+
 export const recipeComponents = sqliteTable(
   "recipe_components",
   {

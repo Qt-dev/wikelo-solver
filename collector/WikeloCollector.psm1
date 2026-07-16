@@ -366,6 +366,7 @@ function ConvertTo-WikeloRecipe {
         name = $name
         category = $category
         output = [ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity }
+        outputs = @([ordered]@{ gameItemId = $outputId; name = $outputName; quantity = $outputQuantity })
         reputationNeeded = ConvertTo-WikeloNumber (Get-WikeloProperty $Candidate @('reputationNeeded', 'requiredReputation', 'reputationRequirement')) 0
         reputationGranted = ConvertTo-WikeloNumber (Get-WikeloProperty $Candidate @('reputationGranted', 'grantedReputation', 'reputationReward')) 0
         components = $components
@@ -461,6 +462,30 @@ function Get-WikeloRewardReferenceValue {
     }
     if ($Node.LocalName -eq 'BlueprintRewards') { return [string](Get-WikeloXmlValue $Node @('blueprintPool')) }
     Get-WikeloXmlReferenceValue $Node
+}
+
+function Get-WikeloRewardEntries {
+    param([System.Xml.XmlElement]$Node)
+    $entries = [Collections.Generic.List[object]]::new()
+    if ($Node.LocalName -eq 'ContractResult_ItemsWeighting') {
+        foreach ($award in @($Node.SelectNodes(".//*[local-name()='ItemAwardEntityClass']"))) {
+            $reference = Get-WikeloXmlReferenceValue $award
+            if ($reference) {
+                $quantity = ConvertTo-WikeloNumber (Get-WikeloXmlValue $award @('amountToAward','amount','quantity')) 1
+                $entries.Add([ordered]@{ gameItemId = $reference; quantity = [math]::Max(1, [math]::Ceiling($quantity)) })
+            }
+        }
+    } elseif ($Node.LocalName -eq 'BlueprintRewards') {
+        $reference = [string](Get-WikeloXmlValue $Node @('blueprintPool'))
+        if ($reference) { $entries.Add([ordered]@{ gameItemId = $reference; quantity = 1 }) }
+    } else {
+        $reference = Get-WikeloXmlReferenceValue $Node
+        if ($reference) {
+            $quantity = ConvertTo-WikeloNumber (Get-WikeloXmlValue $Node @('amount','amountToAward','quantity')) 1
+            $entries.Add([ordered]@{ gameItemId = $reference; quantity = [math]::Max(1, [math]::Ceiling($quantity)) })
+        }
+    }
+    @($entries)
 }
 
 function Get-WikeloRewardReference {
@@ -604,22 +629,35 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
                 }
             }
         }
-        $reward = $null
+        $rewardNodes = @()
         foreach ($source in $sourceNodes) {
             $results = $source.SelectNodes(".//*[local-name()='contractResults']")
             foreach ($result in $results) {
-                $reward = $result.SelectSingleNode(".//*[local-name()='ContractResult_Item' or local-name()='ContractResult_ItemsWeighting' or local-name()='BlueprintRewards']")
-                if ($reward) { break }
+                $rewardNodes = @($result.SelectNodes(".//*[local-name()='ContractResult_Item' or local-name()='ContractResult_ItemsWeighting' or local-name()='BlueprintRewards']"))
+                if ($rewardNodes.Count -gt 0) { break }
             }
-            if ($reward) { break }
+            if ($rewardNodes.Count -gt 0) { break }
         }
-        if (-not $reward -or $requirements.Count -eq 0) { Write-Verbose "Skipping incomplete contract '$($contract.GetAttribute('id'))'."; continue }
-        $outputId = Get-WikeloRewardReferenceValue $reward
-        $output = Resolve-WikeloReferenceName $outputId $referenceNames $localization
-        if ([string]::IsNullOrWhiteSpace([string]$outputId) -or [string]::IsNullOrWhiteSpace([string]$output)) {
+        if ($rewardNodes.Count -eq 0 -or $requirements.Count -eq 0) { Write-Verbose "Skipping incomplete contract '$($contract.GetAttribute('id'))'."; continue }
+        $outputById = [ordered]@{}
+        foreach ($rewardNode in $rewardNodes) {
+            foreach ($entry in @(Get-WikeloRewardEntries $rewardNode)) {
+                $entryId = [string]$entry.gameItemId
+                $entryName = Resolve-WikeloReferenceName $entryId $referenceNames $localization
+                if ([string]::IsNullOrWhiteSpace($entryId) -or [string]::IsNullOrWhiteSpace([string]$entryName)) { continue }
+                $entryQuantity = [int]$entry.quantity
+                if (-not $outputById.Contains($entryId) -or [int]$outputById[$entryId].quantity -lt $entryQuantity) {
+                    $outputById[$entryId] = [ordered]@{ gameItemId = $entryId; name = $entryName; quantity = $entryQuantity }
+                }
+            }
+        }
+        $outputs = @($outputById.Values)
+        if ($outputs.Count -eq 0) {
             Write-Verbose "Skipping contract '$($contract.GetAttribute('id'))' because its reward has no resolvable reference."
             continue
         }
+        $outputId = $outputs[0].gameItemId
+        $output = $outputs[0].name
         $titleNode = $contract.SelectSingleNode(".//*[local-name()='ContractStringParam' and @param='Title']")
         $titleKey = if ($titleNode) { $titleNode.GetAttribute('value') } else { $null }
         $name = Resolve-WikeloLocalizedName $titleKey $localization
@@ -629,7 +667,8 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         if (-not $id) { $id = Get-WikeloStableId "$name|$output" 'recipe' }
         $recipes.Add([ordered]@{
             gameRecipeId = $id; name = $name; category = 'thecollector'
-            output = [ordered]@{ gameItemId = $outputId; name = $output; quantity = 1 }
+            output = $outputs[0]
+            outputs = $outputs
             reputationNeeded = 0; reputationGranted = 0; components = @($requirements)
         })
     }
@@ -714,6 +753,10 @@ function Assert-WikeloNormalizedV1 {
         }
         if ($ids.ContainsKey([string]$recipe.gameRecipeId)) { $errors.Add("duplicate recipe id: $($recipe.gameRecipeId)") } else { $ids[[string]$recipe.gameRecipeId] = $true }
         if ($null -eq $recipe.output -or [string]::IsNullOrWhiteSpace([string]$recipe.output.name) -or [double]$recipe.output.quantity -le 0) { $errors.Add("recipe '$($recipe.gameRecipeId)' has an invalid output") }
+        $outputs = if ($null -ne $recipe.outputs -and @($recipe.outputs).Count -gt 0) { @($recipe.outputs) } else { @($recipe.output) }
+        foreach ($output in $outputs) {
+            if ([string]::IsNullOrWhiteSpace([string]$output.name) -or [double]$output.quantity -le 0) { $errors.Add("recipe '$($recipe.gameRecipeId)' has an invalid output entry") }
+        }
         if ([double]$recipe.reputationNeeded -lt 0 -or [double]$recipe.reputationGranted -lt 0) { $errors.Add("recipe '$($recipe.gameRecipeId)' has negative reputation") }
         if (@($recipe.components).Count -eq 0) { $errors.Add("recipe '$($recipe.gameRecipeId)' has no components") }
         foreach ($component in @($recipe.components)) {

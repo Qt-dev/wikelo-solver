@@ -17,7 +17,19 @@ test("normalized imports require complete recipes and positive quantities", () =
     recipes: [{ gameRecipeId: "r1", name: "Recipe", category: "armor", output: { gameItemId: null, name: "Output", quantity: 1 }, reputationNeeded: 0, reputationGranted: 5, components: [{ gameItemId: "i1", name: "Iron", category: "material", quantity: 2 }] }],
   };
   assert.equal(normalized.parseNormalizedImport(valid), valid);
+  assert.deepEqual(valid.recipes[0].outputs, [valid.recipes[0].output]);
   assert.throws(() => normalized.parseNormalizedImport({ ...valid, recipes: [{ ...valid.recipes[0], components: [] }] }), /invalid or incomplete/i);
+});
+
+test("normalized imports retain every produced item", () => {
+  const payload = {
+    schema: "wikelo-normalized-v1",
+    patch: { version: "4.2", build: "123", channel: "LIVE", sourceHash: "c".repeat(64), extractedAt: "2026-07-15T00:00:00Z" },
+    recipes: [{ gameRecipeId: "r3", name: "Bundle", category: "armor", output: { gameItemId: "reward-1", name: "Helmet", quantity: 1 }, outputs: [{ gameItemId: "reward-1", name: "Helmet", quantity: 1 }, { gameItemId: "reward-2", name: "Wikelo Favor", quantity: 20 }], reputationNeeded: 0, reputationGranted: 5, components: [{ gameItemId: "i3", name: "Iron", category: "material", quantity: 2 }] }],
+  };
+  const parsed = normalized.parseNormalizedImport(payload);
+  assert.equal(parsed.recipes[0].outputs.length, 2);
+  assert.equal(parsed.recipes[0].outputs[1].name, "Wikelo Favor");
 });
 
 test("UEX mapping permits exact ID, exact UUID, reviewed alias, and unique normalized name only", () => {
