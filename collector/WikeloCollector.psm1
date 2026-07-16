@@ -523,6 +523,7 @@ function Get-WikeloXmlRootMetadata {
     $rootRef = $null
     $rootName = $null
     $nestedRefs = [Collections.Generic.List[object]]::new()
+    $creationRefs = [Collections.Generic.List[object]]::new()
     try {
         $settings = [Xml.XmlReaderSettings]::new()
         $settings.IgnoreComments = $true
@@ -538,14 +539,22 @@ function Get-WikeloXmlRootMetadata {
                 } elseif ($ref) {
                     $nestedRefs.Add([pscustomobject]@{ Reference = $ref; Name = $name })
                 }
+                if ($reader.LocalName -eq 'CraftingProcess_Creation') {
+                    $createdRef = $reader.GetAttribute('entityClass')
+                    if ($createdRef) {
+                        $createdName = (ConvertTo-WikeloFileDisplayName -File $File) -replace ' Blueprint$', ''
+                        $creationRefs.Add([pscustomobject]@{ Reference = $createdRef; Name = $createdName })
+                    }
+                }
                 if ($rootRef -and -not $rootName -and $name) { $rootName = $name }
-                if ($rootRef -and $rootName) {
+                if ($rootRef -and $rootName -and $creationRefs.Count -eq 0) {
                     return [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true }
                 }
             }
         }
         if ($rootRef) {
             [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true }
+            foreach ($created in $creationRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $created.Reference; Name = $created.Name; IsRoot = $false } }
         } else {
             foreach ($nested in $nestedRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $nested.Reference; Name = $nested.Name; IsRoot = $false } }
         }

@@ -1,0 +1,3 @@
+<CraftingBlueprintRecord __ref="@crafting_blueprint">
+  <CraftingProcess_Creation entityClass="@crafted_reward" />
+</CraftingBlueprintRecord>
