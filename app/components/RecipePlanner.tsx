@@ -153,15 +153,20 @@ export default function RecipePlanner() {
   const allocationFor = useCallback((itemId: string, fallback: ComponentAllocation) => allocations[itemId] ?? fallback, [allocations]);
   const summaryFor = useCallback((recipe: RecipeDto) => {
     let valueAuec = 0;
-    let accountedQuantity = 0;
+    let ownedQuantity = 0;
+    let farmableQuantity = 0;
+    let neededQuantity = 0;
     let totalQuantity = 0;
     const missingItemIds: string[] = [];
     for (const component of recipe.components) {
       const allocation = allocationFor(component.itemId, component.allocation);
-      const accounted = Math.min(component.quantity, allocation.ownedQuantity + allocation.farmableQuantity);
-      const needed = component.quantity - accounted;
+      const owned = Math.min(component.quantity, allocation.ownedQuantity);
+      const farmable = Math.min(component.quantity - owned, allocation.farmableQuantity);
+      const needed = component.quantity - owned - farmable;
       totalQuantity += component.quantity;
-      accountedQuantity += accounted;
+      ownedQuantity += owned;
+      farmableQuantity += farmable;
+      neededQuantity += needed;
       if (needed > 0 && component.unitPriceAuec === null) missingItemIds.push(component.itemId);
       else if (needed > 0) valueAuec += (component.unitPriceAuec ?? 0) * needed;
     }
@@ -169,10 +174,12 @@ export default function RecipePlanner() {
       valueAuec,
       complete: missingItemIds.length === 0,
       missingItemIds,
-      accountedQuantity,
+      ownedQuantity,
+      farmableQuantity,
+      neededQuantity,
       totalQuantity,
-      readiness: totalQuantity ? Math.round((accountedQuantity / totalQuantity) * 100) : 100,
-      ready: accountedQuantity === totalQuantity,
+      readiness: totalQuantity ? Math.round((ownedQuantity / totalQuantity) * 100) : 100,
+      ready: ownedQuantity === totalQuantity,
     };
   }, [allocationFor]);
   const filteredRecipes = useMemo(() => {
@@ -208,7 +215,8 @@ export default function RecipePlanner() {
       }
     }
     let totalRequired = 0;
-    let accounted = 0;
+    let ownedTotal = 0;
+    let farmingUnits = 0;
     let missingUnits = 0;
     let valueAuec = 0;
     let unpricedItems = 0;
@@ -219,13 +227,14 @@ export default function RecipePlanner() {
       const needed = material.required - owned - farmable;
       const costAuec = (material.unitPriceAuec ?? 0) * needed;
       totalRequired += material.required;
-      accounted += owned + farmable;
+      ownedTotal += owned;
+      farmingUnits += farmable;
       missingUnits += needed;
       valueAuec += costAuec;
       if (needed > 0 && material.unitPriceAuec === null) unpricedItems += 1;
       return { ...material, owned, farmable, needed, costAuec };
-    }).sort((left, right) => right.needed - left.needed || left.name.localeCompare(right.name));
-    return { entries, materials: materialRows, totalCompletions, reputationGranted, reputationNeeded, totalRequired, accounted, missingUnits, valueAuec, unpricedItems, readiness: totalRequired ? Math.round((accounted / totalRequired) * 100) : 100 };
+    }).sort((left, right) => (right.needed + right.farmable) - (left.needed + left.farmable) || left.name.localeCompare(right.name));
+    return { entries, materials: materialRows, totalCompletions, reputationGranted, reputationNeeded, totalRequired, ownedTotal, farmingUnits, missingUnits, valueAuec, unpricedItems, readiness: totalRequired ? Math.round((ownedTotal / totalRequired) * 100) : 100 };
   }, [allocationFor, recipes, todos]);
   const recipeStale = Boolean(data && (data.freshness.recipesStale || isOlderThan(data.patch?.extractedAt, RECIPE_STALE_MS)));
   const priceStale = Boolean(data && (data.freshness.pricesStale || isOlderThan(data.freshness.latestPriceAt, PRICE_STALE_MS)));
@@ -332,7 +341,7 @@ export default function RecipePlanner() {
     <main className={`planner-shell ${recipeFocused ? "recipe-focus" : ""}`}>
       <header className="topbar">
         <a className="brand" href="#planner" aria-label="Wikelo Solver home"><span className="brand-mark" aria-hidden="true">W</span><span>Wikelo <em>Solver</em></span></a>
-        <nav aria-label="Primary navigation" className="main-nav"><a href="#planner" className="active" onClick={(event) => { if (recipeFocused) { event.preventDefault(); changeRecipe(); } }}>Planner</a><a href="#recipe-details" onClick={(event) => { if (selectedRecipe) { event.preventDefault(); chooseRecipe(selectedRecipe.id); } }}>Current recipe</a><a href="/settings">Settings</a></nav>
+        <nav aria-label="Primary navigation" className="main-nav"><a href="#planner" className="active" onClick={(event) => { if (recipeFocused) { event.preventDefault(); changeRecipe(); } }}>Planner</a><a href="/settings">Settings</a></nav>
         <button className="todo-nav-button" type="button" onClick={() => setTodoOpen(true)}><span>To-do list</span><b>{todoSummary.totalCompletions}</b></button>
         {session.user ? <div className="account-control"><span className="account-avatar" aria-hidden="true">{session.user.displayName.slice(0, 1)}</span><span><strong>{session.user.displayName}</strong><small>Inventory synced</small></span><button type="button" onClick={() => void logout()} disabled={loggingOut}>{loggingOut ? "Signing out…" : "Log out"}</button></div> : <a className="discord-button" href="/auth/discord/start"><span aria-hidden="true">◆</span><span>Sign in with Discord<small>Sync inventory</small></span></a>}
       </header>
@@ -341,9 +350,9 @@ export default function RecipePlanner() {
         <aside className="todo-drawer" role="dialog" aria-modal="true" aria-labelledby="todo-title">
           <header><div><p className="eyebrow">Full completion plan</p><h2 id="todo-title">To-do list</h2></div><button type="button" className="todo-close" onClick={() => setTodoOpen(false)} aria-label="Close to-do list">×</button></header>
           {todoSummary.entries.length === 0 ? <div className="todo-empty"><span aria-hidden="true">◇</span><h3>No recipes queued</h3><p>Open a recipe and add one or more completions to build a combined material plan.</p><button type="button" onClick={() => setTodoOpen(false)}>Browse recipes</button></div> : <>
-            <section className="todo-stat-grid" aria-label="To-do totals"><div><span>Completions</span><strong>{todoSummary.totalCompletions}</strong><small>{todoSummary.entries.length} unique recipes</small></div><div><span>Materials ready</span><strong>{todoSummary.readiness}%</strong><small>{todoSummary.accounted}/{todoSummary.totalRequired} units</small></div><div><span>Missing materials</span><strong>{todoSummary.missingUnits}</strong><small>{todoSummary.materials.filter((item) => item.needed > 0).length} item types</small></div><div><span>Still to source</span><strong>{formatAuec(todoSummary.valueAuec)}</strong><small>aUEC{todoSummary.unpricedItems ? ` + ${todoSummary.unpricedItems} unpriced` : ""}</small></div><div><span>Reputation needed</span><strong>{todoSummary.reputationNeeded}</strong><small>highest unlock threshold</small></div><div><span>Reputation granted</span><strong>+{todoSummary.reputationGranted}</strong><small>after all completions</small></div></section>
+            <section className="todo-stat-grid" aria-label="To-do totals"><div><span>Completions</span><strong>{todoSummary.totalCompletions}</strong><small>{todoSummary.entries.length} unique recipes</small></div><div><span>Ready now</span><strong>{todoSummary.readiness}%</strong><small>{todoSummary.ownedTotal}/{todoSummary.totalRequired} owned</small></div><div><span>To farm</span><strong>{todoSummary.farmingUnits}</strong><small>units still to gather</small></div><div><span>To source</span><strong>{todoSummary.missingUnits}</strong><small>{todoSummary.materials.filter((item) => item.needed > 0).length} item types</small></div><div><span>Estimated purchases</span><strong>{formatAuec(todoSummary.valueAuec)}</strong><small>aUEC{todoSummary.unpricedItems ? ` + ${todoSummary.unpricedItems} unpriced` : ""}</small></div><div><span>Reputation</span><strong>+{todoSummary.reputationGranted}</strong><small>{todoSummary.reputationNeeded} required to unlock all</small></div></section>
             <section className="todo-section"><div className="todo-section-heading"><div><h3>Queued recipes</h3><p>Change the number of completions at any time.</p></div></div><div className="todo-recipes">{todoSummary.entries.map(({ recipe, quantity }) => <article key={recipe.id}><div><strong>{recipe.name}</strong><small>{recipe.output.quantity * quantity}× {recipe.output.name} total</small></div><label><span>Qty</span><input key={`${recipe.id}-${quantity}`} type="number" min="1" max="99" defaultValue={quantity} disabled={pendingTodos.has(recipe.id)} onBlur={(event) => void updateTodo(recipe.id, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label><button type="button" onClick={() => { setTodoOpen(false); chooseRecipe(recipe.id); }}>Open</button><button type="button" className="remove" disabled={pendingTodos.has(recipe.id)} onClick={() => void updateTodo(recipe.id, 0)}>Remove</button></article>)}</div></section>
-            <section className="todo-section"><div className="todo-section-heading"><div><h3>Combined materials</h3><p>Inventory is applied once across every queued recipe.</p></div><span>{todoSummary.missingUnits} units missing</span></div><div className="todo-materials">{todoSummary.materials.map((material) => <article className={material.needed ? "missing" : "ready"} key={material.itemId}><div><strong>{material.name}</strong><small>{material.required} required</small></div><dl><div><dt>Owned</dt><dd>{material.owned}</dd></div><div><dt>Farmable</dt><dd>{material.farmable}</dd></div><div><dt>Missing</dt><dd>{material.needed}</dd></div></dl><div className="todo-material-cost"><strong>{material.unitPriceAuec === null && material.needed ? "Price missing" : `${formatAuec(material.costAuec)} aUEC`}</strong>{material.uexMarketplaceUrl && <a href={material.uexMarketplaceUrl} target="_blank" rel="noreferrer">UEX listing</a>}</div></article>)}</div></section>
+            <section className="todo-section"><div className="todo-section-heading"><div><h3>Combined materials</h3><p>Inventory is applied once across every queued recipe.</p></div><span>{todoSummary.farmingUnits} to farm · {todoSummary.missingUnits} to source</span></div><div className="todo-materials">{todoSummary.materials.map((material) => <article className={material.needed ? "missing" : material.farmable ? "farming" : "ready"} key={material.itemId}><div><strong>{material.name}</strong><small>{material.required} required</small></div><dl><div><dt>Owned</dt><dd>{material.owned}</dd></div><div><dt>To farm</dt><dd>{material.farmable}</dd></div><div><dt>To source</dt><dd>{material.needed}</dd></div></dl><div className="todo-material-cost"><strong>{material.unitPriceAuec === null && material.needed ? "Price missing" : `${formatAuec(material.costAuec)} aUEC`}</strong>{material.uexMarketplaceUrl && <a href={material.uexMarketplaceUrl} target="_blank" rel="noreferrer">UEX listing</a>}</div></article>)}</div></section>
             {!session.user && <p className="local-disclaimer">This to-do list is saved only in this browser. <a href="/auth/discord/start">Sign in</a> to sync it across devices.</p>}
           </>}
         </aside>
@@ -351,17 +360,17 @@ export default function RecipePlanner() {
 
       <section className="hero" aria-labelledby="page-title">
         <div><p className="eyebrow">Live Wikelo mission planner</p><h1 id="page-title">Choose a commission.<br /><i>Finish the recipe.</i></h1><p className="hero-copy">Select one recipe, divide each requirement between owned, farmable, and still needed, then see the exact amount left to source.</p></div>
-        <div className="field-note" aria-label="Current recipe summary"><span>Working recipe</span><strong>{loading ? "Loading recipes…" : selectedRecipe?.name ?? "No active recipe"}</strong><p>{selectedSummary ? `${selectedSummary.accountedQuantity} of ${selectedSummary.totalQuantity} units accounted for` : "Waiting for an active patch"}</p><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary?.readiness ?? 0}%` }} /></div></div>
+        <div className="field-note" aria-label="Current recipe summary"><span>Working recipe</span><strong>{loading ? "Loading recipes…" : selectedRecipe?.name ?? "No active recipe"}</strong><p>{selectedSummary ? `${selectedSummary.ownedQuantity} owned · ${selectedSummary.farmableQuantity} to farm · ${selectedSummary.neededQuantity} to source` : "Waiting for an active patch"}</p><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary?.readiness ?? 0}%` }} /></div></div>
       </section>
       {(notice || saveError) && <div className={`notice-bar ${saveError ? "error" : ""}`} role={saveError ? "alert" : "status"}>{saveError ?? notice}</div>}
 
-      <section className={`planner-controls ${searchVisible ? "" : "search-hidden"}`} id="planner" aria-label="Search and filter recipes">
-        {searchVisible && <label className="global-search" htmlFor="recipe-search"><span>Search recipes and ingredients</span><div className="search-box"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try a recipe, reward, or component name…" /></div></label>}
-        <div className="control-group"><span>Readiness</span><div className="segmented-control">{([["all", "All"], ["ready", "Ready"], ["needed", "Needs items"]] as Array<[ReadinessFilter, string]>).map(([value, label]) => <button key={value} type="button" className={readiness === value ? "selected" : ""} aria-pressed={readiness === value} onClick={() => setReadiness(value)}>{label}</button>)}</div></div>
+      {searchVisible ? <section className="planner-controls" id="planner" aria-label="Search and filter recipes">
+        <label className="global-search" htmlFor="recipe-search"><span>Search recipes and ingredients</span><div className="search-box"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try a recipe, reward, or component name…" /></div></label>
+        <div className="control-group"><span>Inventory</span><div className="segmented-control">{([["all", "All"], ["ready", "Fully owned"], ["needed", "Needs work"]] as Array<[ReadinessFilter, string]>).map(([value, label]) => <button key={value} type="button" className={readiness === value ? "selected" : ""} aria-pressed={readiness === value} onClick={() => setReadiness(value)}>{label}</button>)}</div></div>
         <label className="sort-control"><span>Sort</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortKey)}><option value="price">Lowest price</option><option value="name">Recipe name</option><option value="needed">Reputation needed</option><option value="granted">Reputation granted</option></select></label>
         <div className="view-toggle" role="group" aria-label="Recipe summary view"><span>View</span><div><button type="button" className={viewMode === "table" ? "selected" : ""} onClick={() => changeView("table")} aria-pressed={viewMode === "table"}>Table</button><button type="button" className={viewMode === "cards" ? "selected" : ""} onClick={() => changeView("cards")} aria-pressed={viewMode === "cards"}>Cards</button></div></div>
-        <button type="button" className="search-visibility-toggle" onClick={toggleSearch}>{searchVisible ? "Hide search" : `Show search${search ? " (filtered)" : ""}`}</button>
-      </section>
+        <button type="button" className="search-visibility-toggle" onClick={toggleSearch}>Hide search & filters</button>
+      </section> : <div className="planner-controls-collapsed" id="planner"><button type="button" onClick={toggleSearch}>Show search & filters{search || readiness !== "all" ? " (filtered)" : ""}</button></div>}
 
       <section className={`planner-workspace ${recipeFocused ? "focused" : ""}`} aria-busy={loading}>
         {!recipeFocused && <aside className={`recipe-browser ${viewMode}-view`} aria-label="Recipe summaries">
@@ -373,16 +382,16 @@ export default function RecipePlanner() {
             : filteredRecipes.length === 0 ? <div className="empty-state"><span>⌕</span><h3>No matching recipes</h3><p>Try another recipe, reward, or component name.</p><button type="button" onClick={() => { setSearch(""); setReadiness("all"); }}>Clear filters</button></div>
             : <div className="recipe-summaries">{filteredRecipes.map((recipe) => {
               const summary = summaryFor(recipe);
-              return <article className={`recipe-summary ${recipe.id === selectedRecipe?.id ? "chosen" : ""}`} key={recipe.id}><button type="button" onClick={() => chooseRecipe(recipe.id)} aria-pressed={recipe.id === selectedRecipe?.id}><span className={`recipe-glyph ${categoryTone(recipe.category)}`} aria-hidden="true">✦</span><span className="recipe-name"><strong>{recipe.name}</strong><small>{recipe.output.quantity}× {recipe.output.name}</small></span><span className="summary-price"><b>{formatAuec(summary.valueAuec)}</b><small>{summary.complete ? "aUEC left" : `+ ${summary.missingItemIds.length} unpriced`}</small></span><span className={`readiness-pill ${summary.ready ? "ready" : ""}`}>{summary.readiness}%</span><span className="card-reputation"><b>{recipe.reputationNeeded}</b> rep needed · +{recipe.reputationGranted}</span></button></article>;
+              return <article className={`recipe-summary ${recipe.id === selectedRecipe?.id ? "chosen" : ""}`} key={recipe.id}><button type="button" onClick={() => chooseRecipe(recipe.id)} aria-pressed={recipe.id === selectedRecipe?.id}><span className={`recipe-glyph ${categoryTone(recipe.category)}`} aria-hidden="true">✦</span><span className="recipe-name"><strong>{recipe.name}</strong><small>{recipe.output.quantity}× {recipe.output.name}</small></span><span className="summary-price"><b>{formatAuec(summary.valueAuec)}</b><small>{summary.complete ? "aUEC left" : `+ ${summary.missingItemIds.length} unpriced`}</small></span><span className={`readiness-pill ${summary.ready ? "ready" : ""}`}>{summary.readiness}% owned</span><span className="card-reputation"><b>{recipe.reputationNeeded}</b> rep needed · +{recipe.reputationGranted}</span></button></article>;
             })}</div>}
         </aside>}
 
         <section className="detail-panel" id="recipe-details" aria-live="polite">
           {selectedRecipe && selectedSummary ? <>
-            {recipeFocused && <div className="focus-toolbar"><button type="button" onClick={changeRecipe}><span aria-hidden="true">←</span> Change recipe</button><span><strong>{selectedRecipe.name}</strong><small>{selectedSummary.readiness}% ready</small></span></div>}
-            <header className="detail-title"><div><p className="eyebrow">Current recipe</p><h2>{selectedRecipe.name}</h2><p>Produces {selectedRecipe.output.quantity}× {selectedRecipe.output.name}</p></div><div className="detail-actions"><div className="detail-progress"><span>{selectedSummary.readiness}% ready</span><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary.readiness}%` }} /></div></div><div className="todo-add-control"><input aria-label="Number of completions to add" type="number" min="1" max="99" value={todoQuantity} onChange={(event) => setTodoQuantity(Math.max(1, Math.min(99, Number(event.target.value))))} /><button type="button" disabled={pendingTodos.has(selectedRecipe.id)} onClick={() => void updateTodo(selectedRecipe.id, (todos[selectedRecipe.id] ?? 0) + todoQuantity)}>Add to to-do</button></div></div></header>
+            {recipeFocused && <div className="focus-toolbar"><button type="button" onClick={changeRecipe}><span aria-hidden="true">←</span> Change recipe</button><span><strong>{selectedRecipe.name}</strong><small>{selectedSummary.readiness}% owned · {selectedSummary.farmableQuantity} to farm</small></span></div>}
+            <header className="detail-title"><div><p className="eyebrow">Current recipe</p><h2>{selectedRecipe.name}</h2><p>Produces {selectedRecipe.output.quantity}× {selectedRecipe.output.name}</p></div><div className="detail-actions"><div className="detail-progress"><span>{selectedSummary.readiness}% owned</span><div className="progress-track" aria-hidden="true"><span style={{ width: `${selectedSummary.readiness}%` }} /></div></div><div className="todo-add-control"><input aria-label="Number of completions to add" type="number" min="1" max="99" value={todoQuantity} onChange={(event) => setTodoQuantity(Math.max(1, Math.min(99, Number(event.target.value))))} /><button type="button" disabled={pendingTodos.has(selectedRecipe.id)} onClick={() => void updateTodo(selectedRecipe.id, (todos[selectedRecipe.id] ?? 0) + todoQuantity)}>Add to to-do</button></div></div></header>
             <div className="recipe-overview"><div><span>Reputation needed</span><strong>{selectedRecipe.reputationNeeded}</strong></div><div><span>Granted</span><strong>+{selectedRecipe.reputationGranted}</strong></div><div className="overview-cost"><span>Still to source</span><strong>{formatAuec(selectedSummary.valueAuec)} <small>aUEC</small></strong><p>{selectedSummary.complete ? "All needed units are priced." : `${selectedSummary.missingItemIds.length} needed item price${selectedSummary.missingItemIds.length === 1 ? " is" : "s are"} missing.`}</p></div></div>
-            <div className="component-heading"><div><h3>Allocate required units</h3><p>Owned + farmable + needed always equals the recipe requirement.</p></div><span>{selectedSummary.accountedQuantity}/{selectedSummary.totalQuantity} accounted</span></div>
+            <div className="component-heading"><div><h3>Allocate required units</h3><p>Keep owned inventory separate from materials you still need to farm or source.</p></div><span>{selectedSummary.ownedQuantity}/{selectedSummary.totalQuantity} in inventory</span></div>
             <div className="component-list">{selectedRecipe.components.map((component) => {
               const allocation = allocationFor(component.itemId, component.allocation);
               const owned = Math.min(component.quantity, allocation.ownedQuantity);
@@ -391,13 +400,13 @@ export default function RecipePlanner() {
               const pending = pendingItems.has(component.itemId);
               const setOwned = (value: number) => updateAllocation(component.itemId, { ownedQuantity: Math.max(0, Math.min(component.quantity, value)), farmableQuantity: Math.min(farmable, component.quantity - Math.max(0, Math.min(component.quantity, value))) }, allocation);
               const setFarmable = (value: number) => updateAllocation(component.itemId, { ownedQuantity: owned, farmableQuantity: Math.max(0, Math.min(component.quantity - owned, value)) }, allocation);
-              return <article className={`component ${needed === 0 ? "accounted" : ""}`} key={component.itemId}>
-                <div className="component-main"><span className="component-token" aria-hidden="true">◆</span><div><strong>{component.name}</strong><small>{component.quantity} required</small></div><b className={component.unitPriceAuec === null && needed > 0 ? "missing" : ""}>{component.unitPriceAuec === null ? "Price missing" : `${formatAuec(component.unitPriceAuec * needed)} aUEC`}<small>{component.unitPriceAuec === null ? "Needed units not counted" : `${formatAuec(component.unitPriceAuec)} each · ${needed} needed`}</small></b></div>
+              return <article className={`component ${owned === component.quantity ? "owned-complete" : farmable > 0 ? "has-farmable" : ""}`} key={component.itemId}>
+                <div className="component-main"><span className="component-token" aria-hidden="true">◆</span><div><strong>{component.name}</strong><small>{owned} owned · {farmable} to farm · {needed} to source</small></div><b className={component.unitPriceAuec === null && needed > 0 ? "missing" : ""}>{component.unitPriceAuec === null && needed > 0 ? "Price missing" : `${formatAuec((component.unitPriceAuec ?? 0) * needed)} aUEC`}<small>{component.unitPriceAuec === null && needed > 0 ? "Sourced units not counted" : `${formatAuec(component.unitPriceAuec ?? 0)} each · ${needed} to source`}</small></b></div>
                 <div className="allocation-grid" aria-label={`${component.name} unit allocation`}>
                   <label className="allocation owned"><span>Owned</span><input key={`${component.itemId}-owned-${owned}`} type="number" min="0" max={component.quantity} defaultValue={owned} disabled={pending} onBlur={(event) => void setOwned(Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>in inventory</small></label>
-                  <label className="allocation farmable"><span>Farmable</span><input key={`${component.itemId}-farmable-${farmable}`} type="number" min="0" max={component.quantity - owned} defaultValue={farmable} disabled={pending} onBlur={(event) => void setFarmable(Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>will collect</small></label>
-                  <div className="allocation needed"><span>Needed</span><strong>{needed}</strong><small>left to buy</small></div>
-                  <div className="allocation-actions"><button type="button" disabled={pending} onClick={() => void updateAllocation(component.itemId, { ownedQuantity: component.quantity, farmableQuantity: 0 }, allocation)}>Own all</button><button type="button" disabled={pending} onClick={() => void updateAllocation(component.itemId, { ownedQuantity: 0, farmableQuantity: component.quantity }, allocation)}>Farm all</button><button type="button" disabled={pending} onClick={() => void updateAllocation(component.itemId, { ownedQuantity: 0, farmableQuantity: 0 }, allocation)}>Need all</button></div>
+                  <label className="allocation farmable"><span>To farm</span><input key={`${component.itemId}-farmable-${farmable}`} type="number" min="0" max={component.quantity - owned} defaultValue={farmable} disabled={pending} onBlur={(event) => void setFarmable(Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>still must gather</small></label>
+                  <div className="allocation needed"><span>To source</span><strong>{needed}</strong><small>buy or find</small></div>
+                  <div className="allocation-actions"><button type="button" disabled={pending} onClick={() => void updateAllocation(component.itemId, { ownedQuantity: component.quantity, farmableQuantity: 0 }, allocation)}>Mark owned</button><button type="button" disabled={pending} onClick={() => void updateAllocation(component.itemId, { ownedQuantity: 0, farmableQuantity: component.quantity }, allocation)}>Farm all</button><button type="button" disabled={pending} onClick={() => void updateAllocation(component.itemId, { ownedQuantity: 0, farmableQuantity: 0 }, allocation)}>Source all</button></div>
                 </div>
                 <div className="component-data">{component.mappingStatus !== "matched" && <span className="data-flag mapping">{component.mappingStatus === "review" ? "UEX match needs review" : "UEX match missing"}</span>}{component.priceMode !== "uex" && <span className="data-flag current">{component.priceMode === "override" ? "Your price override" : "Your UEX match"}</span>}{component.uexMarketplaceUrl && <a href={component.uexMarketplaceUrl} target="_blank" rel="noreferrer">Open UEX listing</a>}<span>Price updated {formatTimestamp(component.priceCapturedAt)}</span><a href={`/settings?item=${encodeURIComponent(component.itemId)}`}>Correct price</a>{pending && <span role="status">Saving…</span>}</div>
               </article>;
