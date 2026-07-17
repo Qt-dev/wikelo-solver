@@ -599,15 +599,29 @@ function Get-WikeloXmlRootMetadata {
     $rootName = $null
     $nestedRefs = [Collections.Generic.List[object]]::new()
     $creationRefs = [Collections.Generic.List[object]]::new()
+    $compositionRefs = [Collections.Generic.List[string]]::new()
+    $elementCount = 0
     try {
         $settings = [Xml.XmlReaderSettings]::new()
         $settings.IgnoreComments = $true
         $reader = [Xml.XmlReader]::Create($File.FullName, $settings)
         while ($reader.Read()) {
             if ($reader.NodeType -eq [Xml.XmlNodeType]::Element) {
+                $elementCount++
                 $ref = $reader.GetAttribute('__ref')
                 $name = @('Name', 'name', 'DisplayName', 'displayName', 'debugName') | ForEach-Object { $reader.GetAttribute($_) } | Where-Object { $_ } | Select-Object -First 1
-                if ($name -in @('@LOC_UNINITIALIZED', '@LOC_EMPTY', 'LOC_UNINITIALIZED', 'LOC_EMPTY')) { $name = $null }
+                $isPreferredName = $false
+                if ($reader.LocalName -eq 'Localization') {
+                    $name = $reader.GetAttribute('Name')
+                    $isPreferredName = [bool]$name
+                } elseif ($reader.LocalName -eq 'VehicleComponentParams') {
+                    $name = $reader.GetAttribute('vehicleName')
+                    $isPreferredName = [bool]$name
+                } elseif ($reader.LocalName -eq 'SCItemPurchasableParams') {
+                    $name = $reader.GetAttribute('displayName')
+                    $isPreferredName = [bool]$name
+                }
+                if ($name -match '(?i)loc_uninitialized|loc_empty|loc_placeholder|^<=\s*placeholder\s*=>$') { $name = $null; $isPreferredName = $false }
                 if ($reader.Depth -eq 0 -and $ref) {
                     $rootRef = $ref
                     if ($name) { $rootName = $name }
@@ -617,21 +631,32 @@ function Get-WikeloXmlRootMetadata {
                 if ($reader.LocalName -eq 'CraftingProcess_Creation') {
                     $createdRef = $reader.GetAttribute('entityClass')
                     if ($createdRef) {
-                        $createdName = (ConvertTo-WikeloFileDisplayName -File $File) -replace ' Blueprint$', ''
+                        $createdName = '@item_Name_' + (([IO.Path]::GetFileNameWithoutExtension($File.Name)) -replace '^bp_craft_', '')
                         $creationRefs.Add([pscustomobject]@{ Reference = $createdRef; Name = $createdName })
                     }
                 }
-                if ($rootRef -and -not $rootName -and $name) { $rootName = $name }
-                if ($rootRef -and $rootName -and $creationRefs.Count -eq 0) {
-                    return [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true }
+                if ($reader.LocalName -eq 'ResourceContainerDefaultCompositionEntry') {
+                    $compositionRef = $reader.GetAttribute('entry')
+                    if ($compositionRef) { $compositionRefs.Add($compositionRef) }
+                }
+                if ($rootRef -and $name -and (-not $rootName -or $isPreferredName)) { $rootName = $name }
+                if ($rootRef -and $rootName -and $isPreferredName -and $reader.LocalName -ne 'SCItemPurchasableParams' -and $creationRefs.Count -eq 0 -and $compositionRefs.Count -eq 0) {
+                    return [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true; Kind = 'root' }
+                }
+                if ($rootRef -and $rootName -and $elementCount -ge 64) {
+                    [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true; Kind = 'root' }
+                    foreach ($created in $creationRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $created.Reference; Name = $created.Name; IsRoot = $false; Kind = 'creation' } }
+                    foreach ($composition in $compositionRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $composition; Name = $rootName; IsRoot = $false; Kind = 'composition' } }
+                    return
                 }
             }
         }
         if ($rootRef) {
-            [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true }
-            foreach ($created in $creationRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $created.Reference; Name = $created.Name; IsRoot = $false } }
+            [pscustomobject]@{ Path = $File.FullName; Reference = $rootRef; Name = $rootName; IsRoot = $true; Kind = 'root' }
+            foreach ($created in $creationRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $created.Reference; Name = $created.Name; IsRoot = $false; Kind = 'creation' } }
+            foreach ($composition in $compositionRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $composition; Name = $rootName; IsRoot = $false; Kind = 'composition' } }
         } else {
-            foreach ($nested in $nestedRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $nested.Reference; Name = $nested.Name; IsRoot = $false } }
+            foreach ($nested in $nestedRefs) { [pscustomobject]@{ Path = $File.FullName; Reference = $nested.Reference; Name = $nested.Name; IsRoot = $false; Kind = 'nested' } }
         }
     } finally {
         if ($reader) { $reader.Dispose() }
@@ -663,6 +688,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
     Write-WikeloCollectorDiagnostic "XML index: discovered $($xmlFiles.Count) XML files; reading root metadata only."
     $referenceNames = @{}
     $referencePaths = @{}
+    $compositionReferenceNames = @{}
     $xmlIndexStopwatch = [Diagnostics.Stopwatch]::StartNew()
     $xmlIndexNumber = 0
     foreach ($file in $xmlFiles) {
@@ -672,7 +698,10 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
                 $ref = [string]$metadata.Reference
                 $name = [string]$metadata.Name
                 $localizedName = if ($name) { Resolve-WikeloLocalizedName $name $localization } else { $null }
-                if ([bool]$metadata.IsRoot -and (-not $localizedName -or $localizedName.StartsWith('@'))) { $name = ConvertTo-WikeloFileDisplayName -File $file }
+                if (($metadata.IsRoot -or $metadata.Kind -eq 'creation') -and (-not $localizedName -or $localizedName.StartsWith('@'))) {
+                    $name = ConvertTo-WikeloFileDisplayName -File $file
+                    if ($metadata.Kind -eq 'creation') { $name = $name -replace ' Blueprint$', '' }
+                }
                 if (-not $name) { $name = $ref }
                 $referenceNames[$ref] = $name
                 $referencePaths[$ref] = $file.FullName
@@ -680,11 +709,18 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
                     $referenceNames[$ref.Substring(1)] = $name
                     $referencePaths[$ref.Substring(1)] = $file.FullName
                 }
+                if ($metadata.Kind -eq 'composition' -and $name -and $name -ne $ref) {
+                    $compositionReferenceNames[$ref] = [pscustomobject]@{ Name = $name; Path = $file.FullName }
+                }
             }
         } catch { Write-Verbose "Ignoring unreadable XML metadata '$($file.FullName)': $($_.Exception.Message)" }
         if (($xmlIndexNumber % 100) -eq 0 -or $xmlIndexNumber -eq $xmlFiles.Count) {
             Write-WikeloCollectorDiagnostic "XML index progress: $xmlIndexNumber/$($xmlFiles.Count) files, $($referencePaths.Count) references, $([math]::Round($xmlIndexStopwatch.Elapsed.TotalMinutes, 1)) minutes elapsed."
         }
+    }
+    foreach ($compositionRef in $compositionReferenceNames.Keys) {
+        $referenceNames[$compositionRef] = $compositionReferenceNames[$compositionRef].Name
+        $referencePaths[$compositionRef] = $compositionReferenceNames[$compositionRef].Path
     }
     $xmlIndexStopwatch.Stop()
     Write-WikeloCollectorDiagnostic "XML index complete: $($referencePaths.Count) references in $([math]::Round($xmlIndexStopwatch.Elapsed.TotalMinutes, 1)) minutes."
@@ -742,6 +778,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         $outputById = [ordered]@{}
         foreach ($rewardNode in $rewardNodes) {
             foreach ($entry in @(Get-WikeloRewardEntries $rewardNode $referenceNames $referencePaths $localization)) {
+                if ([string]$entry.kind -eq 'blueprint' -and [string]$entry.grantTiming -eq 'mission_start') { continue }
                 $entryId = [string]$entry.gameItemId
                 $entryNameValue = if ($entry.Contains('name')) { $entry['name'] } else { $null }
                 $entryName = if ($entryNameValue) { [string]$entryNameValue } else { Resolve-WikeloReferenceName $entryId $referenceNames $localization }
@@ -763,6 +800,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         $titleKey = if ($titleNode) { $titleNode.GetAttribute('value') } else { $null }
         $name = Resolve-WikeloLocalizedName $titleKey $localization
         if ([string]::IsNullOrWhiteSpace($name) -or $name -eq $titleKey) { $name = [string](Get-WikeloXmlValue $contract @('debugName','id')) }
+        if ($name -match '^TheCollector_') { $name = (($name -replace '^TheCollector_', '') -replace '_', ' ' -creplace '([a-z])([A-Z])', '$1 $2').Trim() }
         if (-not $name) { $name = $output }
         $id = [string](Get-WikeloXmlValue $contract @('id','debugName'))
         if (-not $id) { $id = Get-WikeloStableId "$name|$output" 'recipe' }
