@@ -778,7 +778,6 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         $outputById = [ordered]@{}
         foreach ($rewardNode in $rewardNodes) {
             foreach ($entry in @(Get-WikeloRewardEntries $rewardNode $referenceNames $referencePaths $localization)) {
-                if ([string]$entry.kind -eq 'blueprint' -and [string]$entry.grantTiming -eq 'mission_start') { continue }
                 $entryId = [string]$entry.gameItemId
                 $entryNameValue = if ($entry.Contains('name')) { $entry['name'] } else { $null }
                 $entryName = if ($entryNameValue) { [string]$entryNameValue } else { Resolve-WikeloReferenceName $entryId $referenceNames $localization }
