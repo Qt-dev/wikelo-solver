@@ -419,10 +419,10 @@ function Resolve-WikeloLocalizedName {
     $key = if ($Value.StartsWith('@')) { $Value.Substring(1) } else { $Value }
     if ($Localization.ContainsKey($key.ToLowerInvariant())) {
         $resolved = [string]$Localization[$key.ToLowerInvariant()]
-        if ($resolved -match '(?i)uninitialized|loc_empty|loc_placeholder') { return $null }
+        if ($resolved -match '(?i)uninitialized|loc_empty|placeholder') { return $null }
         return $resolved
     }
-    if ($Value -match '(?i)uninitialized|loc_empty|loc_placeholder') { return $null }
+    if ($Value -match '(?i)uninitialized|loc_empty|placeholder') { return $null }
     $Value
 }
 
@@ -606,8 +606,8 @@ function Get-WikeloXmlRootMetadata {
         while ($reader.Read()) {
             if ($reader.NodeType -eq [Xml.XmlNodeType]::Element) {
                 $ref = $reader.GetAttribute('__ref')
-                $name = @('Name', 'name', 'DisplayName', 'displayName', 'debugName') | ForEach-Object { $reader.GetAttribute($_) } | Where-Object { $_ } | Select-Object -First 1
-                if ($name -in @('@LOC_UNINITIALIZED', '@LOC_EMPTY', 'LOC_UNINITIALIZED', 'LOC_EMPTY')) { $name = $null }
+                $name = @('vehicleName', 'Name', 'name', 'DisplayName', 'displayName', 'debugName') | ForEach-Object { $reader.GetAttribute($_) } | Where-Object { $_ } | Select-Object -First 1
+                if ($name -match '(?i)uninitialized|loc_empty|placeholder') { $name = $null }
                 if ($reader.Depth -eq 0 -and $ref) {
                     $rootRef = $ref
                     if ($name) { $rootName = $name }
@@ -686,6 +686,12 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
             Write-WikeloCollectorDiagnostic "XML index progress: $xmlIndexNumber/$($xmlFiles.Count) files, $($referencePaths.Count) references, $([math]::Round($xmlIndexStopwatch.Elapsed.TotalMinutes, 1)) minutes elapsed."
         }
     }
+    # These crafting resource type UUIDs have no standalone localized entity record in the extracted XML.
+    $resourceNameOverrides = @{
+        'bde5a2c8-2ef4-46ac-9403-2fcb79e4016c' = 'Quantainium'
+        '4a47cad8-0271-4048-b19b-d9b52521fc20' = 'Savrilium'
+    }
+    foreach ($resourceId in $resourceNameOverrides.Keys) { $referenceNames[$resourceId] = $resourceNameOverrides[$resourceId] }
     $xmlIndexStopwatch.Stop()
     Write-WikeloCollectorDiagnostic "XML index complete: $($referencePaths.Count) references in $([math]::Round($xmlIndexStopwatch.Elapsed.TotalMinutes, 1)) minutes."
     try { [xml]$collector = Get-Content -LiteralPath $collectorPath.FullName -Raw } catch { throw "Unable to parse $($collectorPath.FullName): $($_.Exception.Message)" }
@@ -693,6 +699,10 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
     $contracts = @($collector.SelectNodes("//*[local-name()='Contract']"))
     Write-WikeloCollectorDiagnostic "TheCollector scan: found $($contracts.Count) Contract nodes."
     $recipes = [Collections.Generic.List[object]]::new()
+    # Keep fallback titles out of the emitted payload, but remember them long enough to
+    # replace internal/test debug names with the real title of a matching reward contract.
+    $fallbackTitleRecipeIds = @{}
+    $internalFallbackTitleRecipeIds = @{}
     $referenceDocuments = @{}
     foreach ($contract in $contracts) {
         $template = $null
@@ -762,7 +772,13 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         $titleNode = $contract.SelectSingleNode(".//*[local-name()='ContractStringParam' and @param='Title']")
         $titleKey = if ($titleNode) { $titleNode.GetAttribute('value') } else { $null }
         $name = Resolve-WikeloLocalizedName $titleKey $localization
-        if ([string]::IsNullOrWhiteSpace($name) -or $name -eq $titleKey) { $name = [string](Get-WikeloXmlValue $contract @('debugName','id')) }
+        $usedFallbackTitle = [string]::IsNullOrWhiteSpace($name) -or $name -eq $titleKey
+        $fallbackDebugName = $null
+        if ($usedFallbackTitle) {
+            $fallbackDebugName = [string](Get-WikeloXmlValue $contract @('debugName','id'))
+            $name = $fallbackDebugName
+        }
+        if ($name -match '^[A-Za-z][A-Za-z0-9_]+$') { $name = (($name -replace '_', ' ') -creplace '([a-z])([A-Z])', '$1 $2').Trim() }
         if (-not $name) { $name = $output }
         $id = [string](Get-WikeloXmlValue $contract @('id','debugName'))
         if (-not $id) { $id = Get-WikeloStableId "$name|$output" 'recipe' }
@@ -784,13 +800,47 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
             }
         }
         $recipes.Add([ordered]@{
-            gameRecipeId = $id; name = $name; category = 'thecollector'
-            output = $outputs[0]
-            outputs = $outputs
-            reputationNeeded = $reputationNeeded; reputationNeededLabel = $reputationNeededLabel; reputationGranted = $reputationGranted; components = @($requirements)
+                gameRecipeId = $id; name = $name; category = 'thecollector'
+                output = $outputs[0]
+                outputs = $outputs
+                reputationNeeded = $reputationNeeded; reputationNeededLabel = $reputationNeededLabel; reputationGranted = $reputationGranted; components = @($requirements)
         })
+        if ($usedFallbackTitle) {
+            $fallbackTitleRecipeIds[$id] = $true
+            # These names identify internal contract plumbing rather than player-facing
+            # missions.  Other debug fallbacks (for example RedFightShotgun) remain valid
+            # canonical candidates for an equivalent internal test contract.
+            if ($fallbackDebugName -match '(?i)(?:flowtest|blueprintflow|(?:^|_)test(?:_|$)|^thecollector_)') {
+                $internalFallbackTitleRecipeIds[$id] = $true
+            }
+        }
     }
     if ($recipes.Count -eq 0) { throw 'No complete Wikelo contracts with HaulingOverride inputs and contractResults rewards were found.' }
+    # Some Collector entries are internal flow tests with no localized title.  When the
+    # primary reward occurs on exactly one normally titled Collector contract, that title
+    # is the authoritative player-facing name for the otherwise unnamed variant.
+    $canonicalNamesByPrimaryOutput = @{}
+    foreach ($recipe in $recipes) {
+        if ($internalFallbackTitleRecipeIds.ContainsKey([string]$recipe.gameRecipeId)) { continue }
+        $primaryOutputId = [string]$recipe.output.gameItemId
+        if ([string]::IsNullOrWhiteSpace($primaryOutputId) -or [string]::IsNullOrWhiteSpace([string]$recipe.name)) { continue }
+        if (-not $canonicalNamesByPrimaryOutput.ContainsKey($primaryOutputId)) { $canonicalNamesByPrimaryOutput[$primaryOutputId] = @() }
+        if ($canonicalNamesByPrimaryOutput[$primaryOutputId] -notcontains [string]$recipe.name) {
+            $canonicalNamesByPrimaryOutput[$primaryOutputId] += [string]$recipe.name
+        }
+    }
+    $canonicalizedFallbackTitleCount = 0
+    foreach ($recipe in $recipes) {
+        if (-not $fallbackTitleRecipeIds.ContainsKey([string]$recipe.gameRecipeId)) { continue }
+        $primaryOutputId = [string]$recipe.output.gameItemId
+        if (-not $canonicalNamesByPrimaryOutput.ContainsKey($primaryOutputId)) { continue }
+        $candidateNames = @($canonicalNamesByPrimaryOutput[$primaryOutputId])
+        if ($candidateNames.Count -eq 1) {
+            $recipe['name'] = [string]$candidateNames[0]
+            $canonicalizedFallbackTitleCount++
+        }
+    }
+    Write-WikeloCollectorDiagnostic "TheCollector title resolution: canonicalized $canonicalizedFallbackTitleCount fallback title(s) from unique matching primary rewards."
     Write-WikeloCollectorDiagnostic "TheCollector scan complete: normalized $($recipes.Count) complete contracts."
     if (-not $PatchVersion) { $PatchVersion = 'unknown' }
     if (-not $PatchBuild) { $PatchBuild = 'unknown' }

@@ -1,10 +1,11 @@
 <EntityClassDefinition.reward_token __ref="@reward_token">
   <StaticEntityClassData>
     <EntityUIDisplayParams displayName="@LOC_UNINITIALIZED" />
+    <SEntityInsuranceProperties>
+      <displayParams name="@LOC_PLACEHOLDER" />
+    </SEntityInsuranceProperties>
   </StaticEntityClassData>
   <Components>
-    <AttachDef>
-      <Localization Name="@item_Name_reward_token" />
-    </AttachDef>
+    <VehicleComponentParams vehicleName="@item_Name_reward_token" />
   </Components>
 </EntityClassDefinition.reward_token>
