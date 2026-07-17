@@ -4,23 +4,7 @@ import { gamePatches, itemMappings, items, priceRefreshRuns, priceSnapshots, rec
 import type { VerifiedImport } from "./import-security";
 import { stableId } from "./crypto";
 import { HttpError } from "./http";
-import { fetchUexJson, marketplaceListingsUrl, parseUexItems, resolveUexMapping, selectUexPrice } from "./uex";
-
-const UEX_LISTING_FETCH_CONCURRENCY = 6;
-
-async function mapWithConcurrency<T, R>(items: readonly T[], concurrency: number, task: (item: T) => Promise<R>) {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await task(items[index]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-  return results;
-}
+import { fetchUexJson, parseUexItems, resolveUexMapping, selectUexPrice } from "./uex";
 
 export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof fetch = fetch) {
   const db = getDb();
@@ -85,10 +69,10 @@ export async function refreshPrices(verified: VerifiedImport, fetchImpl: typeof 
       if (!mapping.uexItemId) continue;
       resolvedRows.push({ item, mapping });
     }
-    const pricedRows = await mapWithConcurrency(resolvedRows, UEX_LISTING_FETCH_CONCURRENCY, async ({ item, mapping }) => {
-      const listingsPayload = await fetchUexJson(marketplaceListingsUrl(marketplaceUrl, mapping.uexItemId!), fetchImpl);
-      return { item, mapping, selected: selectUexPrice(pricesPayload, { idItem: mapping.uexItemId!, uuid: mapping.uexCommodityUuid }, listingsPayload) };
-    });
+    const pricedRows = resolvedRows.map(({ item, mapping }) => ({
+      item,
+      selected: selectUexPrice(pricesPayload, { idItem: mapping.uexItemId!, uuid: mapping.uexCommodityUuid }, marketplacePayload),
+    }));
     let snapshotCount = 0;
     for (const { item, selected } of pricedRows) {
       if (!selected) continue;

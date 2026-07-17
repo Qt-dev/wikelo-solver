@@ -95,6 +95,22 @@ test("an outrageously low marketplace listing is skipped unless another listing 
   assert.equal(corroborated.priceAuec, 100);
 });
 
+test("current quality-zero marketplace averages reconcile from the all-items payload", () => {
+  const averages = { data: [
+    { id: 1, id_item: 4741, quality_tier: 0, operation: "sell", currency: "UEC", unit: "pack", listings_count: 1, price_avg: 10 },
+    { id: 2, id_item: 4741, quality_tier: 2, operation: "sell", currency: "UEC", unit: "unit", listings_count: 13, price_avg: 190308 },
+    { id: 3, id_item: 4741, quality_tier: 0, operation: "sell", currency: "UEC", unit: "unit", listings_count: 13, price_avg: 1236923 },
+  ] };
+  assert.deepEqual(uex.selectUexPrice({ data: [] }, { idItem: 4741, uuid: null }, averages), {
+    uexItemId: 4741,
+    uexCommodityUuid: null,
+    priceAuec: 1236923,
+    priceKind: "marketplace_average",
+    locationName: null,
+    sourceRecordId: "3",
+  });
+});
+
 test("marketplace listing URLs request all active sale listings for one item", () => {
   assert.equal(uex.marketplaceListingsUrl("https://api.uexcorp.uk/2.0/marketplace_prices_averages_all", 4741), "https://api.uexcorp.uk/2.0/marketplace_listings?id_item=4741&operation=sell");
 });

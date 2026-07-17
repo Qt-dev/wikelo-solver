@@ -47,7 +47,7 @@ Running the installer with its default `-Mode All` creates current-user limited 
 .\collector\Install-WikeloCollector.ps1 -Mode Prices -PriceIntervalHours 6
 ```
 
-The price task calls the configured signed refresh endpoint and waits for the server to finish, so the UEX token remains server-only. Re-running the command updates the existing task. The uninstaller removes tasks and preserves local data unless `-RemoveLocalData` is explicitly supplied. Do not run installation from an elevated shell unless that ownership is intended.
+The price task calls the configured signed refresh endpoint and waits for the server to reconcile the all-items UEX terminal and marketplace-average datasets, so the UEX token remains server-only and refresh work stays within Worker limits. Re-running the command updates the existing task. The uninstaller removes tasks and preserves local data unless `-RemoveLocalData` is explicitly supplied. Do not run installation from an elevated shell unless that ownership is intended.
 
 ## Validate
 
