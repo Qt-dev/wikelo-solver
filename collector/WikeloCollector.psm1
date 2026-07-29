@@ -408,7 +408,17 @@ function Read-WikeloLocalization {
         if (-not $trimmed -or $trimmed.StartsWith(';') -or $trimmed.StartsWith('#') -or $trimmed.StartsWith('[') -or $trimmed -notmatch '=') { continue }
         $parts = $trimmed.Split('=', 2)
         $key = $parts[0].Trim()
-        if ($key) { $values[$key.ToLowerInvariant()] = $parts[1].Trim() }
+        if ($key) {
+            $localizedValue = $parts[1].Trim()
+            $values[$key.ToLowerInvariant()] = $localizedValue
+            # DataForge references omit localization variant suffixes such as ",P"
+            # even when global.ini stores only the suffixed form. Preserve the exact
+            # key and add an unsuffixed alias, without replacing an explicit base key.
+            if ($key -match '^(.*),[A-Za-z]+$') {
+                $baseKey = $Matches[1].ToLowerInvariant()
+                if (-not $values.ContainsKey($baseKey)) { $values[$baseKey] = $localizedValue }
+            }
+        }
     }
     $values
 }
@@ -690,6 +700,9 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
     $resourceNameOverrides = @{
         'bde5a2c8-2ef4-46ac-9403-2fcb79e4016c' = 'Quantainium'
         '4a47cad8-0271-4048-b19b-d9b52521fc20' = 'Savrilium'
+        'a789f57a-e12b-4bcd-8132-e0c03d84fc89' = 'Copper'
+        '60f116f4-c02a-45b2-9ded-333747795124' = 'Tungsten'
+        '4236c16b-c47f-4083-9e26-4313733f2326' = 'Corundum'
     }
     foreach ($resourceId in $resourceNameOverrides.Keys) { $referenceNames[$resourceId] = $resourceNameOverrides[$resourceId] }
     $xmlIndexStopwatch.Stop()
@@ -704,6 +717,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
     $fallbackTitleRecipeIds = @{}
     $internalFallbackTitleRecipeIds = @{}
     $referenceDocuments = @{}
+    $fixedTemplateRequirementContractCount = 0
     foreach ($contract in $contracts) {
         $template = $null
         $templateRef = [string](Get-WikeloXmlValue $contract @('template'))
@@ -738,6 +752,32 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
                     }
                 }
             }
+        }
+        # Older and newer Collector contracts use two equivalent hauling layouts. Most
+        # recipes override a template property with HaulingOrderContent_* nodes, while
+        # others put their fixed requirements directly under the template's haulingOrders.
+        # Only use the fixed orders as a fallback so a contract override never gets merged
+        # with (and duplicated by) its template defaults.
+        if ($requirements.Count -eq 0) {
+            foreach ($source in $sourceNodes) {
+                foreach ($entity in @($source.SelectNodes(".//*[local-name()='haulingOrders']/*[local-name()='HaulingOrder_EntityClass']"))) {
+                    $referenceId = Get-WikeloXmlReferenceValue $entity
+                    $reference = Resolve-WikeloReferenceName $referenceId $referenceNames $localization
+                    if ($referenceId) {
+                        $amount = ConvertTo-WikeloNumber (Get-WikeloXmlValue $entity @('minAmount','maxAmount')) 1
+                        $requirements.Add([ordered]@{ gameItemId = $referenceId; name = $reference; category = 'resource'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
+                    }
+                }
+                foreach ($resource in @($source.SelectNodes(".//*[local-name()='haulingOrders']/*[local-name()='HaulingOrder_Resource']"))) {
+                    $referenceId = Get-WikeloXmlReferenceValue $resource
+                    $reference = Resolve-WikeloReferenceName $referenceId $referenceNames $localization
+                    if ($referenceId) {
+                        $amount = ConvertTo-WikeloNumber (Get-WikeloXmlValue $resource @('minSCU','maxSCU')) 1
+                        $requirements.Add([ordered]@{ gameItemId = $referenceId; name = $reference; category = 'resource'; quantity = [math]::Max(1, [math]::Ceiling($amount)) })
+                    }
+                }
+            }
+            if ($requirements.Count -gt 0) { $fixedTemplateRequirementContractCount++ }
         }
         $rewardNodes = @()
         foreach ($source in $sourceNodes) {
@@ -841,6 +881,7 @@ function Convert-WikeloCollectorXmlToNormalizedV1 {
         }
     }
     Write-WikeloCollectorDiagnostic "TheCollector title resolution: canonicalized $canonicalizedFallbackTitleCount fallback title(s) from unique matching primary rewards."
+    Write-WikeloCollectorDiagnostic "TheCollector requirement resolution: used fixed template hauling orders for $fixedTemplateRequirementContractCount contract(s)."
     Write-WikeloCollectorDiagnostic "TheCollector scan complete: normalized $($recipes.Count) complete contracts."
     if (-not $PatchVersion) { $PatchVersion = 'unknown' }
     if (-not $PatchBuild) { $PatchBuild = 'unknown' }

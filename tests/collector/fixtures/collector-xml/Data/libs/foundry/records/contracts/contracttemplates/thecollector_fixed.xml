@@ -1,0 +1,13 @@
+<ContractTemplate.TheCollector_Fixed __ref="@fixed_template">
+  <objectiveTokens>
+    <ObjectiveToken>
+      <objectiveHandler>
+        <ObjectiveHandler_Hauling>
+          <haulingOrders>
+            <HaulingOrder_EntityClass entityClass="@item_ore" minAmount="7" maxAmount="7" />
+          </haulingOrders>
+        </ObjectiveHandler_Hauling>
+      </objectiveHandler>
+    </ObjectiveToken>
+  </objectiveTokens>
+</ContractTemplate.TheCollector_Fixed>
