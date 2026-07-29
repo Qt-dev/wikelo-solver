@@ -18,7 +18,6 @@
     "db:types": "wrangler types worker-configuration.d.ts --config wrangler.jsonc"
   },
   "dependencies": {
-    "@cloudflare/containers": "^0.3.7",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",
@@ -38,6 +37,7 @@
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
+		"tsx": "^4.21.0",
     "vinext": "0.0.50",
     "vite": "8.0.13",
     "wrangler": "4.92.0"

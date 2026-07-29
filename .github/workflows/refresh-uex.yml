@@ -1,0 +1,23 @@
+name: Refresh UEX prices
+
+on:
+  schedule:
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Request a signed UEX refresh
+        env:
+          WIKELO_IMPORT_SECRET: ${{ secrets.WIKELO_IMPORT_SECRET }}
+          WIKELO_SYNC_ORIGIN: ${{ vars.WIKELO_SYNC_ORIGIN }}
+        run: |
+          test -n "$WIKELO_IMPORT_SECRET"
+          test -n "$WIKELO_SYNC_ORIGIN"
+          printf '{}' > "$RUNNER_TEMP/refresh.json"
+          node scripts/post-signed-import.mjs "$WIKELO_SYNC_ORIGIN/api/internal/prices/refresh" "$RUNNER_TEMP/refresh.json"

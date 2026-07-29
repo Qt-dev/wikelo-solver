@@ -1,0 +1,35 @@
+name: Sync SCUnpacked Wikelo data
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Sparse checkout of SCUnpacked contracts
+        run: |
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/StarCitizenWiki/scunpacked-data.git "$RUNNER_TEMP/scunpacked-data"
+          git -C "$RUNNER_TEMP/scunpacked-data" sparse-checkout set contracts
+      - name: Generate normalized Wikelo snapshot
+        run: npx tsx scripts/generate-scunpacked-import.ts --contracts-dir "$RUNNER_TEMP/scunpacked-data/contracts" --output "$RUNNER_TEMP/wikelo-import.json"
+      - name: Submit signed snapshot
+        env:
+          WIKELO_IMPORT_SECRET: ${{ secrets.WIKELO_IMPORT_SECRET }}
+          WIKELO_SYNC_ORIGIN: ${{ vars.WIKELO_SYNC_ORIGIN }}
+        run: |
+          test -n "$WIKELO_IMPORT_SECRET"
+          test -n "$WIKELO_SYNC_ORIGIN"
+          node scripts/post-signed-import.mjs "$WIKELO_SYNC_ORIGIN/api/internal/imports/wikelo" "$RUNNER_TEMP/wikelo-import.json"

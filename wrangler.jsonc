@@ -21,41 +21,14 @@
 	"images": {
 		"binding": "IMAGES"
 	},
-	"triggers": {
-		"crons": ["15 */6 * * *", "30 3 * * *"]
-	},
-	"workflows": [
-		{
-			"binding": "UEX_SYNC_WORKFLOW",
-			"name": "wikelo-uex-sync",
-			"class_name": "UexPriceSyncWorkflow"
-		},
-		{
-			"binding": "GAME_SYNC_WORKFLOW",
-			"name": "wikelo-game-sync",
-			"class_name": "GameDataSyncWorkflow"
-		}
-	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"name": "WikeloRepositoryContainer",
-				"class_name": "WikeloRepositoryContainer"
-			}
-		]
-	},
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["WikeloRepositoryContainer"]
-		}
-	],
-	"containers": [
+		},
 		{
-			"class_name": "WikeloRepositoryContainer",
-			"image": "./collector/scunpacked-container/Dockerfile",
-			"instance_type": "standard-1",
-			"max_instances": 1
+			"tag": "v2",
+			"deleted_classes": ["WikeloRepositoryContainer"]
 		}
 	],
 	"observability": {
