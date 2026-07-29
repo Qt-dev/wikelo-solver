@@ -39,6 +39,12 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
     )).limit(1)
     : [];
   if (existing[0] && existing[0].state !== "staging" && sameBodyImport[0]) {
+    await db.update(gamePatches).set({
+      source: document.patch.source ?? "game-client",
+      sourceRevision: document.patch.sourceRevision ?? null,
+      sourceUrl: document.patch.sourceUrl ?? null,
+      lastCheckedAt: now,
+    }).where(eq(gamePatches.id, existing[0].id));
     await db.update(importRuns).set({ status: "idempotent", patchId: existing[0].id, completedAt: now }).where(eq(importRuns.id, runId));
     return { runId, patchId: existing[0].id, status: "idempotent" as const };
   }
@@ -81,7 +87,11 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
           version: document.patch.version,
           build: document.patch.build,
           channel: document.patch.channel,
+          source: document.patch.source ?? "game-client",
+          sourceRevision: document.patch.sourceRevision ?? null,
+          sourceUrl: document.patch.sourceUrl ?? null,
           extractedAt: document.patch.extractedAt,
+          lastCheckedAt: now,
           importedAt: now,
           activationState: "staging",
         }).where(eq(gamePatches.id, patchId)),
@@ -92,7 +102,11 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
         build: document.patch.build,
         channel: document.patch.channel,
         sourceHash,
+        source: document.patch.source ?? "game-client",
+        sourceRevision: document.patch.sourceRevision ?? null,
+        sourceUrl: document.patch.sourceUrl ?? null,
         extractedAt: document.patch.extractedAt,
+        lastCheckedAt: now,
         importedAt: now,
         activationState: "staging",
       })];
@@ -113,6 +127,7 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
         reputationNeeded: recipe.reputationNeeded,
         reputationNeededLabel: recipe.reputationNeededLabel ?? null,
         reputationGranted: recipe.reputationGranted,
+        notForRelease: recipe.notForRelease ?? false,
       }));
       for (const [sortOrder, output] of outputs.entries()) {
         snapshotStatements.push(db.insert(recipeOutputs).values({

@@ -30,7 +30,7 @@ export async function GET(request: Request) {
       return Response.json(empty, { headers: { "Cache-Control": "private, no-store" } });
     }
 
-    const recipeRows = await db.select().from(recipes).where(eq(recipes.patchId, patch.id)).orderBy(asc(recipes.name));
+    const recipeRows = await db.select().from(recipes).where(eq(recipes.patchId, patch.id)).orderBy(asc(recipes.notForRelease), asc(recipes.name));
     const outputRows = await db.select({
       recipeId: recipeOutputs.recipeId,
       sortOrder: recipeOutputs.sortOrder,
@@ -154,6 +154,7 @@ export async function GET(request: Request) {
         reputationNeeded: recipe.reputationNeeded,
         reputationNeededLabel: recipe.reputationNeededLabel,
         reputationGranted: recipe.reputationGranted,
+        notForRelease: recipe.notForRelease,
         components,
         total: calculateRecipeTotal(components),
       };
@@ -161,7 +162,7 @@ export async function GET(request: Request) {
     const latestPriceAt = allPrices[0]?.capturedAt ?? null;
     const now = Date.now();
     const response: RecipesResponse = {
-      patch: { id: patch.id, version: patch.version, channel: patch.channel, extractedAt: patch.extractedAt, importedAt: patch.importedAt },
+      patch: { id: patch.id, version: patch.version, channel: patch.channel, extractedAt: patch.lastCheckedAt, importedAt: patch.importedAt },
       recipes: payloadRecipes,
       freshness: {
         recipesStale: now - Date.parse(patch.extractedAt) > RECIPE_STALE_MS,

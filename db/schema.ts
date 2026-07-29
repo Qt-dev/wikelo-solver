@@ -17,7 +17,11 @@ export const gamePatches = sqliteTable(
     build: text("build").notNull(),
     channel: text("channel").notNull(),
     sourceHash: text("source_hash").notNull(),
+    source: text("source").notNull().default("game-client"),
+    sourceRevision: text("source_revision"),
+    sourceUrl: text("source_url"),
     extractedAt: text("extracted_at").notNull(),
+    lastCheckedAt: text("last_checked_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     importedAt: text("imported_at").notNull(),
     activationState: text("activation_state", {
       enum: ["staging", "active", "previous", "archived"],
@@ -99,6 +103,7 @@ export const recipes = sqliteTable(
     reputationNeeded: integer("reputation_needed").notNull().default(0),
     reputationNeededLabel: text("reputation_needed_label"),
     reputationGranted: integer("reputation_granted").notNull().default(0),
+    notForRelease: integer("not_for_release", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     uniqueIndex("recipes_patch_game_recipe_unique").on(table.patchId, table.gameRecipeId),

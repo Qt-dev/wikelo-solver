@@ -76,6 +76,7 @@ export type RecipeDto = {
   reputationNeeded: number;
   reputationNeededLabel: string | null;
   reputationGranted: number;
+  notForRelease: boolean;
   components: RecipeComponentDto[];
   total: { valueAuec: number; complete: boolean; missingItemIds: string[] };
 };
@@ -93,8 +94,17 @@ export type SessionResponse = {
 };
 
 export type NormalizedImportV1 = {
-  schema: "wikelo-normalized-v1";
-  patch: { version: string; build: string; channel: string; sourceHash: string; extractedAt: string };
+  schema: "wikelo-normalized-v1" | "wikelo-normalized-v2";
+  patch: {
+    version: string;
+    build: string;
+    channel: string;
+    sourceHash: string;
+    extractedAt: string;
+    source?: string;
+    sourceRevision?: string | null;
+    sourceUrl?: string | null;
+  };
   recipes: Array<{
     gameRecipeId: string;
     name: string;
@@ -104,6 +114,8 @@ export type NormalizedImportV1 = {
     reputationNeeded: number;
     reputationNeededLabel?: string | null;
     reputationGranted: number;
+    notForRelease?: boolean;
+    sourcePath?: string | null;
     components: Array<{ gameItemId: string; name: string; category: string; quantity: number }>;
   }>;
 };
