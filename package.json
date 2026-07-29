@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/backend/security.test.mjs tests/backend/data-policy.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/backend/security.test.mjs tests/backend/data-policy.test.mjs tests/backend/scunpacked.test.mjs",
     "test:collector": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/collector/Run-CollectorTests.ps1",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
@@ -37,6 +37,7 @@
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
+		"tsx": "^4.21.0",
     "vinext": "0.0.50",
     "vite": "8.0.13",
     "wrangler": "4.92.0"

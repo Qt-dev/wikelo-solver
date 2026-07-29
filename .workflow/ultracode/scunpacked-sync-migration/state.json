@@ -1,0 +1,23 @@
+{
+  "title": "scunpacked-data sync migration",
+  "slug": "scunpacked-sync-migration",
+  "created_at": "2026-07-29T00:00:00-07:00",
+  "updated_at": "2026-07-29T08:00:00-07:00",
+  "status": "complete",
+  "mode": "delegated",
+  "baseline_ref": "HEAD",
+  "risk_level": "high",
+  "eval_contract": { "level": "full", "path": "eval-contract.md", "status": "checked" },
+  "approval": { "required": false, "granted": true, "notes": "Implementation requested; deployment and production mutations excluded." },
+  "delegation": { "native_agent_available": true, "native_agent_planned": true, "native_agent_used": true, "agent_count": 3, "wave_count": 1, "no_delegation_reason": "", "notes": "Bounded, disjoint packets." },
+  "packets": [
+    { "id": "01-discovery", "status": "complete", "owner": "read-only-agent", "write_scope": [], "result_path": "results/01-discovery.md" },
+    { "id": "02-repository-normalizer", "status": "complete", "owner": "write-capable-agent", "write_scope": ["lib/server/scunpacked.ts", "tests/backend/scunpacked.test.mjs"], "result_path": "results/02-repository-normalizer.md" },
+    { "id": "03-release-status-ui", "status": "complete", "owner": "write-capable-agent", "write_scope": ["db/schema.ts", "lib/contracts/api.ts", "app/components/RecipePlanner.tsx", "tests/backend/release-status.test.mjs"], "result_path": "results/03-release-status-ui.md" }
+  ],
+  "verification": { "status": "complete", "checks": [
+    { "name": "lint", "command": "npm run lint", "required": true, "status": "skipped", "evidence": "Pre-existing .tmp/master-fix generated artifacts cause 9 errors/1760 warnings; scoped ESLint passed." },
+    { "name": "build", "command": "npm run build", "required": true, "status": "pass", "evidence": "Vinext build passed." },
+    { "name": "tests", "command": "npm test", "required": true, "status": "pass", "evidence": "21 focused project tests passed." }
+  ] }
+}

@@ -24,7 +24,7 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
   const candidate = value as Partial<NormalizedImportV1>;
   const patch = candidate.patch;
   if (
-    candidate.schema !== "wikelo-normalized-v1" ||
+    (candidate.schema !== "wikelo-normalized-v1" && candidate.schema !== "wikelo-normalized-v2") ||
     !patch ||
     !nonEmpty(patch.version) ||
     !nonEmpty(patch.build) ||
@@ -36,6 +36,14 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
     candidate.recipes.length === 0
   ) {
     throw new HttpError(400, "Import metadata is invalid or incomplete.", "invalid_import");
+  }
+  if (candidate.schema === "wikelo-normalized-v2" && (
+    !nonEmpty(patch.source) ||
+    !nonEmpty(patch.sourceRevision) ||
+    !nonEmpty(patch.sourceUrl) ||
+    !/^https:\/\//.test(patch.sourceUrl)
+  )) {
+    throw new HttpError(400, "Repository import source metadata is invalid or incomplete.", "invalid_import");
   }
 
   const recipeIds = new Set<string>();
@@ -83,6 +91,8 @@ export function parseNormalizedImport(value: unknown): NormalizedImportV1 {
     recipe.outputs = outputs;
     recipe.output = outputs[0];
     recipe.reputationNeededLabel ??= null;
+    recipe.notForRelease ??= false;
+    recipe.sourcePath ??= null;
     recipeIds.add(recipe.gameRecipeId);
     if (recipe.category.toLocaleLowerCase("en-US") === "entityclass") recipe.category = "resource";
     const componentIds = new Set<string>();
