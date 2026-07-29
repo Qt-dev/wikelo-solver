@@ -25,7 +25,7 @@ export type SelectedUexPrice = {
   uexItemId: number;
   uexCommodityUuid: string | null;
   priceAuec: number;
-  priceKind: "terminal_buy" | "marketplace_listing";
+  priceKind: "terminal_buy" | "marketplace_average" | "marketplace_listing";
   locationName: string | null;
   sourceRecordId: string | null;
 };
@@ -119,9 +119,9 @@ export function resolveUexMapping(
 }
 
 /**
- * Selects the lowest acquisition price from terminals and active per-unit seller
- * listings. Marketplace lows below half of the next listing are discarded as
- * likely outliers until the remaining lowest pair is plausible.
+ * Selects the lowest acquisition price from terminals and the supplied current
+ * marketplace data. The automatic refresh supplies UEX's all-items averages;
+ * individual listing payloads remain supported for focused/manual lookups.
  */
 export function selectUexPrice(
   terminalPayload: unknown,
@@ -142,6 +142,22 @@ export function selectUexPrice(
   const marketplace = records(marketplaceListingsPayload).filter((record) =>
     integer(record, ["id_item", "item_id"]) === uexItem.idItem,
   );
+  const averages = marketplace.flatMap((record) => {
+    const operation = string(record, ["operation"]);
+    const currency = string(record, ["currency"]);
+    const unit = string(record, ["unit"]);
+    const qualityTier = integer(record, ["quality_tier"]);
+    const listingCount = integer(record, ["listings_count"]);
+    const price = integer(record, ["price_avg"]);
+    return operation?.toLowerCase() === "sell"
+      && currency !== null && ["auec", "uec"].includes(currency.toLowerCase())
+      && unit?.toLowerCase() === "unit"
+      && qualityTier === 0
+      && listingCount !== null && listingCount > 0
+      && price !== null && price > 0
+      ? [{ price, id: identifier(record, ["id", "id_marketplace_price_average"]) }]
+      : [];
+  }).sort((left, right) => left.price - right.price || (left.id ?? "").localeCompare(right.id ?? ""))[0];
   const listings = marketplace.flatMap((record) => {
     const operation = string(record, ["operation"]);
     const currency = string(record, ["currency"]);
@@ -165,12 +181,17 @@ export function selectUexPrice(
     && listings[listingIndex].price < listings[listingIndex + 1].price * MARKETPLACE_LOW_OUTLIER_RATIO
   ) listingIndex += 1;
   const listing = listings[listingIndex];
+  const market = averages
+    ? { price: averages.price, kind: "marketplace_average" as const, location: null, id: averages.id }
+    : listing
+      ? { price: listing.price, kind: "marketplace_listing" as const, location: listing.location, id: listing.id }
+      : null;
 
-  if (terminal && (!listing || terminal.price <= listing.price)) {
+  if (terminal && (!market || terminal.price <= market.price)) {
     return { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: terminal.price, priceKind: "terminal_buy", locationName: terminal.location, sourceRecordId: terminal.id };
   }
-  return listing
-    ? { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: listing.price, priceKind: "marketplace_listing", locationName: listing.location, sourceRecordId: listing.id }
+  return market
+    ? { uexItemId: uexItem.idItem, uexCommodityUuid: uexItem.uuid, priceAuec: market.price, priceKind: market.kind, locationName: market.location, sourceRecordId: market.id }
     : null;
 }
 

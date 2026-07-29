@@ -1,4 +1,5 @@
 import { and, eq, ne } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { getDb } from "@/db";
 import { gamePatches, importRuns, itemMappings, items, recipeComponents, recipeOutputs, recipes } from "@/db/schema";
 import type { NormalizedImportV1 } from "@/lib/contracts/api";
@@ -44,28 +45,6 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
 
   const patchId = existing[0]?.id ?? await stableId("pat", sourceHash);
   try {
-    if (existing[0]) {
-      await db.delete(recipes).where(eq(recipes.patchId, patchId));
-      await db.update(gamePatches).set({
-        version: document.patch.version,
-        build: document.patch.build,
-        channel: document.patch.channel,
-        extractedAt: document.patch.extractedAt,
-        importedAt: now,
-        activationState: "staging",
-      }).where(eq(gamePatches.id, patchId));
-    } else {
-      await db.insert(gamePatches).values({
-        id: patchId,
-        version: document.patch.version,
-        build: document.patch.build,
-        channel: document.patch.channel,
-        sourceHash,
-        extractedAt: document.patch.extractedAt,
-        importedAt: now,
-        activationState: "staging",
-      });
-    }
     await db.update(importRuns).set({ patchId }).where(eq(importRuns.id, runId));
 
     const allItemInputs = document.recipes.flatMap((recipe) => [
@@ -93,11 +72,36 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
       await db.insert(itemMappings).values({ itemId, status: "missing", updatedAt: now }).onConflictDoNothing();
     }
 
+    // Replace the recipe snapshot and activation state in one atomic D1 batch.
+    // Readers therefore see either the old complete snapshot or the new one.
+    const snapshotStatements: BatchItem<"sqlite">[] = existing[0]
+      ? [
+        db.delete(recipes).where(eq(recipes.patchId, patchId)),
+        db.update(gamePatches).set({
+          version: document.patch.version,
+          build: document.patch.build,
+          channel: document.patch.channel,
+          extractedAt: document.patch.extractedAt,
+          importedAt: now,
+          activationState: "staging",
+        }).where(eq(gamePatches.id, patchId)),
+      ]
+      : [db.insert(gamePatches).values({
+        id: patchId,
+        version: document.patch.version,
+        build: document.patch.build,
+        channel: document.patch.channel,
+        sourceHash,
+        extractedAt: document.patch.extractedAt,
+        importedAt: now,
+        activationState: "staging",
+      })];
+
     for (const recipe of document.recipes) {
       const recipeId = await stableId("rcp", `${patchId}:${recipe.gameRecipeId}`);
       const outputs = recipe.outputs?.length ? recipe.outputs : [recipe.output];
       const primaryOutput = outputs[0];
-      await db.insert(recipes).values({
+      snapshotStatements.push(db.insert(recipes).values({
         id: recipeId,
         patchId,
         gameRecipeId: recipe.gameRecipeId,
@@ -109,9 +113,9 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
         reputationNeeded: recipe.reputationNeeded,
         reputationNeededLabel: recipe.reputationNeededLabel ?? null,
         reputationGranted: recipe.reputationGranted,
-      });
+      }));
       for (const [sortOrder, output] of outputs.entries()) {
-        await db.insert(recipeOutputs).values({
+        snapshotStatements.push(db.insert(recipeOutputs).values({
           recipeId,
           sortOrder,
           itemId: output.gameItemId ? itemIds.get(output.gameItemId) ?? null : null,
@@ -120,27 +124,27 @@ export async function importWikeloSnapshot(document: NormalizedImportV1, verifie
           outputKind: output.kind ?? "item",
           grantTiming: output.grantTiming ?? "mission_completion",
           externalUrl: output.externalUrl ?? null,
-        });
+        }));
       }
       for (const [sortOrder, component] of recipe.components.entries()) {
-        await db.insert(recipeComponents).values({
+        snapshotStatements.push(db.insert(recipeComponents).values({
           recipeId,
           itemId: itemIds.get(component.gameItemId)!,
           componentName: component.name,
           componentCategory: component.category,
           quantity: component.quantity,
           sortOrder,
-        });
+        }));
       }
     }
 
-    // D1 batches are atomic: only this short final batch changes visible activation state.
-    await db.batch([
+    snapshotStatements.push(
       db.update(gamePatches).set({ activationState: "archived" }).where(eq(gamePatches.activationState, "previous")),
       db.update(gamePatches).set({ activationState: "previous" }).where(and(eq(gamePatches.activationState, "active"), ne(gamePatches.id, patchId))),
       db.update(gamePatches).set({ activationState: "active" }).where(eq(gamePatches.id, patchId)),
       db.update(importRuns).set({ status: "completed", completedAt: new Date().toISOString() }).where(eq(importRuns.id, runId)),
-    ]);
+    );
+    await db.batch(snapshotStatements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
     return { runId, patchId, status: "completed" as const };
   } catch (error) {
     await db.update(importRuns).set({

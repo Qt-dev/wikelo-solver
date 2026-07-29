@@ -56,7 +56,20 @@ export async function GET(request: Request) {
     }).from(recipeComponents)
       .innerJoin(items, eq(items.id, recipeComponents.itemId))
       .leftJoin(itemMappings, eq(itemMappings.itemId, items.id));
-    const activeComponents = componentRows.filter((row) => recipeRows.some((recipe) => recipe.id === row.recipeId));
+    const recipeIds = new Set(recipeRows.map((recipe) => recipe.id));
+    const activeComponents = componentRows.filter((row) => recipeIds.has(row.recipeId));
+    const outputsByRecipe = new Map<string, typeof outputRows>();
+    for (const output of outputRows) {
+      const outputs = outputsByRecipe.get(output.recipeId) ?? [];
+      outputs.push(output);
+      outputsByRecipe.set(output.recipeId, outputs);
+    }
+    const componentsByRecipe = new Map<string, typeof activeComponents>();
+    for (const component of activeComponents) {
+      const components = componentsByRecipe.get(component.recipeId) ?? [];
+      components.push(component);
+      componentsByRecipe.set(component.recipeId, components);
+    }
     const allPrices = await db.select({
       id: priceSnapshots.id,
       itemId: priceSnapshots.itemId,
@@ -83,7 +96,7 @@ export async function GET(request: Request) {
     const missingPrices = new Set<string>();
 
     const payloadRecipes: RecipeDto[] = recipeRows.map((recipe) => {
-      const outputs = outputRows.filter((output) => output.recipeId === recipe.id).map((output) => ({
+      const outputs = (outputsByRecipe.get(recipe.id) ?? []).map((output) => ({
         itemId: output.itemId,
         name: output.outputName,
         quantity: output.quantity,
@@ -92,8 +105,7 @@ export async function GET(request: Request) {
         externalUrl: output.externalUrl,
       }));
       if (outputs.length === 0) outputs.push({ itemId: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity, kind: "item", grantTiming: "mission_completion", externalUrl: null });
-      const components: RecipeComponentDto[] = activeComponents
-        .filter((component) => component.recipeId === recipe.id)
+      const components: RecipeComponentDto[] = (componentsByRecipe.get(recipe.id) ?? [])
         .sort((left, right) => left.sortOrder - right.sortOrder)
         .map((component) => {
           const savedPreference = preferenceByItem.get(component.itemId);

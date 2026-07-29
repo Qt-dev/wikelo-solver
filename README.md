@@ -88,7 +88,7 @@ This task runs under the current Windows user, starts missed runs when the user 
 - The active patch changes only after a complete validated import succeeds; failed imports leave the previous active patch visible.
 - UEX `id_item` is the canonical marketplace identity; game UUIDs are optional secondary identifiers. Only an existing exact UEX item ID, exact game UUID, reviewed alias, or unique exact normalized-name mapping is accepted automatically.
 - Matched recipe components expose their official UEX marketplace link, including Wikelo Favor at `id_item=4385`.
-- Price selection compares current terminal offers with active per-unit UEX seller listings. A marketplace low below half of the next-lowest listing is treated as an outlier unless another listing corroborates it.
+- Automatic price selection compares current terminal offers with UEX's hourly current average of active quality-zero, per-unit seller listings. The full marketplace average dataset is reconciled locally in one request, avoiding per-item API fan-out.
 - Owned and farmable inputs contribute zero to the shopping cost.
 - A missing price for a needed component marks the total incomplete. It is never silently treated as a zero-priced purchase.
 - The active patch and two preceding patches are retained for rollback and comparison.
