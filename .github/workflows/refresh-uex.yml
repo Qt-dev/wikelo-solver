@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
       - name: Request a signed UEX refresh
         env:
           WIKELO_IMPORT_SECRET: ${{ secrets.WIKELO_IMPORT_SECRET }}
