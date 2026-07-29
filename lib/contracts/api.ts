@@ -119,3 +119,21 @@ export type NormalizedImportV1 = {
     components: Array<{ gameItemId: string; name: string; category: string; quantity: number }>;
   }>;
 };
+
+export type UexPriceKind = "terminal_buy" | "marketplace_average" | "marketplace_listing";
+
+export type UexPriceContextV1 = {
+  schema: "wikelo-uex-context-v1";
+  patchId: string;
+  candidates: Array<{ itemId: string; gameItemId: string; name: string; reviewedAlias: string | null; existingUexItemId: number | null; existingUexUuid: string | null }>;
+  customListings: Array<{ itemId: string; uexItemId: number }>;
+};
+
+export type UexPriceImportV1 = {
+  schema: "wikelo-uex-import-v1";
+  patchId: string;
+  capturedAt: string;
+  source: { itemsUrl: string; marketplaceUrl: string; revision: string };
+  mappings: Array<{ itemId: string; uexItemId: number | null; uexCommodityUuid: string | null; uexName: string | null; status: "matched" | "review" | "missing"; matchMethod: "exact_id" | "exact_uuid" | "reviewed_alias" | "exact_normalized_name" | null }>;
+  snapshots: Array<{ itemId: string; uexItemId: number; uexCommodityUuid: string | null; priceAuec: number; priceKind: UexPriceKind; locationName: string | null; sourceRecordId: string | null; source?: string }>;
+};
