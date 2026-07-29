@@ -32,6 +32,9 @@ export type SelectedUexPrice = {
 
 export const MARKETPLACE_LOW_OUTLIER_RATIO = 0.5;
 
+export const UEX_ITEMS_PRICES_URL = "https://api.uexcorp.uk/2.0/items_prices_all";
+export const UEX_MARKETPLACE_PRICES_URL = "https://api.uexcorp.uk/2.0/marketplace_prices_averages_all";
+
 function object(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -43,6 +46,12 @@ function records(payload: unknown): JsonObject[] {
   return object(payload.data) && Array.isArray(payload.data.data)
     ? payload.data.data.filter(object)
     : [];
+}
+
+export function assertUexPayload(payload: unknown, source: string) {
+  if (!object(payload) || payload.status === "error" || !Array.isArray(payload.data)) {
+    throw new Error(`UEX ${source} payload is invalid.`);
+  }
 }
 
 function string(record: JsonObject, keys: readonly string[]) {

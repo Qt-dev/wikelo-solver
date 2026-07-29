@@ -13,12 +13,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Request a signed UEX refresh
         env:
           WIKELO_IMPORT_SECRET: ${{ secrets.WIKELO_IMPORT_SECRET }}
           WIKELO_SYNC_ORIGIN: ${{ vars.WIKELO_SYNC_ORIGIN }}
+          UEX_API_TOKEN: ${{ secrets.UEX_API_TOKEN }}
         run: |
           test -n "$WIKELO_IMPORT_SECRET"
           test -n "$WIKELO_SYNC_ORIGIN"
-          printf '{}' > "$RUNNER_TEMP/refresh.json"
-          node scripts/post-signed-import.mjs "$WIKELO_SYNC_ORIGIN/api/internal/prices/refresh" "$RUNNER_TEMP/refresh.json"
+          npx tsx scripts/sync-uex-prices.ts "$WIKELO_SYNC_ORIGIN"
