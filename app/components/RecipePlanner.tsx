@@ -14,6 +14,7 @@ const LOCAL_ALLOCATIONS_KEY = "wikelo-solver:allocations:v2";
 const VIEW_MODE_KEY = "wikelo-solver:recipe-view";
 const LOCAL_TODOS_KEY = "wikelo-solver:todos:v1";
 const SEARCH_VISIBLE_KEY = "wikelo-solver:search-visible";
+const SHOW_NOT_FOR_RELEASE_KEY = "wikelo-solver:show-not-for-release";
 const RECIPE_STALE_MS = 36 * 60 * 60 * 1000;
 const PRICE_STALE_MS = 12 * 60 * 60 * 1000;
 
@@ -99,6 +100,7 @@ export default function RecipePlanner() {
   const [sortBy, setSortBy] = useState<SortKey>("price");
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [searchVisible, setSearchVisible] = useState(true);
+  const [showNotForRelease, setShowNotForRelease] = useState(false);
   const [todos, setTodos] = useState<TodoMap>({});
   const [todoOpen, setTodoOpen] = useState(false);
   const [todoQuantity, setTodoQuantity] = useState(1);
@@ -137,7 +139,7 @@ export default function RecipePlanner() {
     const requestedRecipe = requestedRecipeId && nextData.recipes.some((recipe) => recipe.id === requestedRecipeId)
       ? requestedRecipeId
       : null;
-    setSelectedId((current) => requestedRecipe ?? (current && nextData.recipes.some((recipe) => recipe.id === current) ? current : nextData.recipes[0]?.id ?? null));
+    setSelectedId((current) => requestedRecipe ?? (current && nextData.recipes.some((recipe) => recipe.id === current) ? current : null));
     setRecipeFocused(Boolean(requestedRecipe));
     if (sessionResult.status === "rejected") setNotice("Account status is unavailable. Changes will stay on this device.");
     setLoading(false);
@@ -148,6 +150,7 @@ export default function RecipePlanner() {
       try {
         setViewMode(window.localStorage.getItem(VIEW_MODE_KEY) === "cards" ? "cards" : "table");
         setSearchVisible(window.localStorage.getItem(SEARCH_VISIBLE_KEY) !== "false");
+        setShowNotForRelease(window.localStorage.getItem(SHOW_NOT_FOR_RELEASE_KEY) === "true");
       } catch { /* preferences are optional */ }
       void loadPlanner();
     }, 0);
@@ -190,6 +193,7 @@ export default function RecipePlanner() {
   const filteredRecipes = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return recipes.filter((recipe) => {
+      if (!showNotForRelease && recipe.notForRelease) return false;
       const ready = summaryFor(recipe).ready;
       const matchesReadiness = readiness === "all" || (readiness === "ready" ? ready : !ready);
       const haystack = [recipe.name, ...recipe.outputs.map((output) => output.name), ...recipe.components.map((component) => component.name)].join(" ").toLocaleLowerCase();
@@ -200,8 +204,10 @@ export default function RecipePlanner() {
       if (sortBy === "needed") return left.reputationNeeded - right.reputationNeeded;
       return left.name.localeCompare(right.name);
     });
-  }, [readiness, recipes, search, sortBy, summaryFor]);
-  const selectedRecipe = recipes.find((recipe) => recipe.id === selectedId) ?? recipes[0] ?? null;
+  }, [readiness, recipes, search, showNotForRelease, sortBy, summaryFor]);
+  // Explicit links and selections remain accessible; only the automatic preview is filtered.
+  const selectedRecipe = recipes.find((recipe) => recipe.id === selectedId)
+    ?? recipes.find((recipe) => showNotForRelease || !recipe.notForRelease) ?? null;
   const selectedSummary = selectedRecipe ? summaryFor(selectedRecipe) : null;
   const todoSummary = useMemo(() => {
     const entries = recipes.flatMap((recipe) => todos[recipe.id] ? [{ recipe, quantity: todos[recipe.id] }] : []);
@@ -251,6 +257,10 @@ export default function RecipePlanner() {
     url.searchParams.set("recipe", id);
     window.history.replaceState(null, "", url);
     window.setTimeout(() => document.getElementById("recipe-details")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+  function changeReleaseVisibility(show: boolean) {
+    setShowNotForRelease(show);
+    try { window.localStorage.setItem(SHOW_NOT_FOR_RELEASE_KEY, String(show)); } catch { /* preference is optional */ }
   }
   function changeRecipe() {
     setRecipeFocused(false);
@@ -377,8 +387,9 @@ export default function RecipePlanner() {
         <div className="control-group"><span>Inventory</span><div className="segmented-control">{([["all", "All"], ["ready", "Fully owned"], ["needed", "Needs work"]] as Array<[ReadinessFilter, string]>).map(([value, label]) => <button key={value} type="button" className={readiness === value ? "selected" : ""} aria-pressed={readiness === value} onClick={() => setReadiness(value)}>{label}</button>)}</div></div>
         <label className="sort-control"><span>Sort</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortKey)}><option value="price">Lowest price</option><option value="name">Recipe name</option><option value="needed">Reputation needed</option><option value="granted">Reputation granted</option></select></label>
         <div className="view-toggle" role="group" aria-label="Recipe summary view"><span>View</span><div><button type="button" className={viewMode === "table" ? "selected" : ""} onClick={() => changeView("table")} aria-pressed={viewMode === "table"}>Table</button><button type="button" className={viewMode === "cards" ? "selected" : ""} onClick={() => changeView("cards")} aria-pressed={viewMode === "cards"}>Cards</button></div></div>
+        <label className="release-filter"><input type="checkbox" checked={showNotForRelease} onChange={(event) => changeReleaseVisibility(event.target.checked)} /><span>Show not-for-release recipes</span></label>
         <button type="button" className="search-visibility-toggle" onClick={toggleSearch}>Hide search & filters</button>
-      </section> : <div className="planner-controls-collapsed" id="planner"><button type="button" onClick={toggleSearch}>Show search & filters{search || readiness !== "all" ? " (filtered)" : ""}</button></div>}
+      </section> : <div className="planner-controls-collapsed" id="planner"><button type="button" onClick={toggleSearch}>Show search & filters{search || readiness !== "all" || !showNotForRelease ? " (filtered)" : ""}</button></div>}
 
       <section className={`planner-workspace ${recipeFocused ? "focused" : ""}`} aria-busy={loading}>
         {!recipeFocused && <aside className={`recipe-browser ${viewMode}-view`} aria-label="Recipe summaries">
@@ -387,7 +398,7 @@ export default function RecipePlanner() {
           {loading ? <div className="loading-state" role="status"><span className="spinner" aria-hidden="true" /><h3>Loading live recipes</h3><p>Reading the active patch and current prices.</p></div>
             : loadError ? <div className="empty-state error-state" role="alert"><span>!</span><h3>Recipes unavailable</h3><p>{loadError}</p><button type="button" onClick={() => void loadPlanner()}>Try again</button></div>
             : recipes.length === 0 ? <div className="empty-state"><span>◇</span><h3>No active recipes</h3><p>Import a complete game snapshot to begin planning.</p></div>
-            : filteredRecipes.length === 0 ? <div className="empty-state"><span>⌕</span><h3>No matching recipes</h3><p>Try another recipe, reward, or component name.</p><button type="button" onClick={() => { setSearch(""); setReadiness("all"); }}>Clear filters</button></div>
+            : filteredRecipes.length === 0 ? <div className="empty-state"><span>⌕</span><h3>No matching recipes</h3><p>Try another search or show not-for-release recipes.</p><button type="button" onClick={() => { setSearch(""); setReadiness("all"); changeReleaseVisibility(true); }}>Clear filters</button></div>
             : <div className="recipe-summaries">{filteredRecipes.map((recipe) => {
               const summary = summaryFor(recipe);
               return <article className={`recipe-summary ${recipe.id === selectedRecipe?.id ? "chosen" : ""}`} key={recipe.id}><button type="button" onClick={() => chooseRecipe(recipe.id)} aria-pressed={recipe.id === selectedRecipe?.id}><span className={`recipe-glyph ${categoryTone(recipe.category)}`} aria-hidden="true">✦</span><span className="recipe-name"><strong>{recipe.name}</strong><small>{recipe.output.quantity}× {recipe.output.name}{recipe.outputs.length > 1 ? ` · +${recipe.outputs.length - 1} more` : ""}</small>{recipe.notForRelease && <span className="data-flag warning" aria-label="Not for release: present in game data but flagged as unavailable.">Not for release</span>}</span><span className="summary-price"><b>{formatAuec(summary.valueAuec)}</b><small>{summary.complete ? "aUEC left" : `+ ${summary.missingItemIds.length} unpriced`}</small></span><span className={`readiness-pill ${summary.ready ? "ready" : ""}`}>{summary.readiness}% owned</span><span className="card-reputation"><b>{recipe.reputationNeeded}</b> rep needed · +{recipe.reputationGranted}</span></button></article>;
@@ -421,7 +432,7 @@ export default function RecipePlanner() {
               </article>;
             })}</div>
             {!session.user && <p className="local-disclaimer">Inventory is saved only in this browser. <a href="/auth/discord/start">Sign in</a> to sync it and manage personal price corrections.</p>}
-          </> : <div className="detail-placeholder"><span aria-hidden="true">◇</span><h2>No recipe selected</h2><p>Recipe details will appear when an active patch is available.</p></div>}
+          </> : <div className="detail-placeholder"><span aria-hidden="true">◇</span><h2>No recipe selected</h2><p>Choose a recipe or adjust the filters to view its details.</p></div>}
         </section>
       </section>
 
